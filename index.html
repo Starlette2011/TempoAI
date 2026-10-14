@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tempo — Smart Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f5f0;--panel:#fff;--ink:#16201a;--mute:#66726a;--line:#e1e5dc;--acc:#3d3df5;--acc-ink:#fff;--soft:#e8e8ff;--bad:#e8452c;--badsoft:#ffe5df;--ok:#1f9d63;--oksoft:#d7f3e4;--warn:#f0a020}
+@media(prefers-color-scheme:dark){:root{--bg:#101612;--panel:#18211b;--ink:#eef2ec;--mute:#93a198;--line:#27332b;--acc:#8b8bff;--acc-ink:#101612;--soft:#26264a;--badsoft:#3b1f19;--oksoft:#173326}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.5 Figtree,system-ui,sans-serif;display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+h1,h2,h3,.brand{font-family:'Bricolage Grotesque',Figtree,sans-serif;letter-spacing:-.02em;margin:0}
+h1{font-size:2.2rem;line-height:1.1;font-weight:700}h2{font-size:1.15rem;font-weight:700;margin-bottom:10px}h3{font-size:1rem;font-weight:500}
+nav{padding:26px 16px;border-right:1px solid var(--line);position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:6px}
+.brand{font-size:1.6rem;font-weight:700;padding:0 10px 16px}
+nav a{padding:10px 12px;border-radius:10px;color:var(--mute);font-weight:500;cursor:pointer}
+nav a.on{background:var(--ink);color:var(--bg)}
+.tip{font-size:.82rem;color:var(--mute);background:var(--soft);border-radius:12px;padding:12px}
+main{padding:34px clamp(16px,4vw,52px) 110px;max-width:1080px;width:100%}
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+.head p{margin:4px 0 0;color:var(--mute)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 14px;font-weight:500}
+button.pri{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+button.ghost{border-color:transparent;background:none;color:var(--mute);padding:6px 8px}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+input,select,textarea{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 12px;width:100%}
+input[type=checkbox]{width:auto}input[type=color]{padding:2px;height:40px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}.span{grid-column:1/-1}
+.row{display:flex;align-items:center;gap:10px}.grow{flex:1;min-width:0}.wrap{flex-wrap:wrap}
+.quick{display:flex;gap:10px;margin-bottom:8px}.quick input{font-size:1rem;padding:12px 15px}
+.hint,.meta{color:var(--mute);font-size:.85rem}.hint{margin:0 0 20px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:var(--bg);border-radius:12px;padding:12px}.stat b{display:block;font:700 1.7rem 'Bricolage Grotesque';letter-spacing:-.03em}
+.slot{display:grid;grid-template-columns:86px 1fr auto;gap:12px;align-items:center;padding:10px 12px;border-radius:12px;background:var(--bg);border-left:4px solid var(--acc);margin-top:8px}
+.slot small{color:var(--mute)}.slot.brk{opacity:.65}
+.tag{display:inline-block;font-size:.76rem;padding:1px 9px;border-radius:99px;background:var(--soft);margin-right:6px}
+.tag.high{background:var(--badsoft);color:var(--bad)}.tag.low{background:var(--oksoft);color:var(--ok)}.tag.od{background:var(--bad);color:#fff}.tag.progress{background:#fff1d0;color:#8a5a00}
+.li{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}.li:first-of-type{border-top:0}
+.task{padding:14px 0;border-top:1px solid var(--line)}.task:first-child{border-top:0}.task.done h3{text-decoration:line-through;color:var(--mute)}
+.chk{width:22px;height:22px;border-radius:7px;border:2px solid var(--mute);padding:0;flex:none}
+.task.done .chk{background:var(--ok);border-color:var(--ok);color:#fff}
+.detail{margin:10px 0 0 34px;padding:12px;background:var(--bg);border-radius:10px;white-space:pre-wrap}
+.tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}.tabs button.on{background:var(--ink);color:var(--bg)}
+.filters{display:grid;grid-template-columns:1fr 150px 150px;gap:10px;margin-bottom:12px}
+.bar{height:10px;border-radius:9px;background:var(--line);overflow:hidden}.bar i{display:block;height:100%;background:var(--acc)}
+.coach{white-space:pre-wrap;background:var(--soft);border-radius:12px;padding:14px}
+.active{background:var(--ink);color:var(--bg);text-align:center;padding:24px}.active b{display:block;font:700 2.6rem 'Bricolage Grotesque';font-variant-numeric:tabular-nums}
+.active button{background:var(--bg);color:var(--ink)}
+.dock{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:99px;display:flex;gap:14px;align-items:center;box-shadow:0 10px 30px #0004;z-index:5}
+.dock button{background:var(--bg);color:var(--ink)}
+dialog{border:1px solid var(--line);border-radius:18px;background:var(--panel);color:var(--ink);padding:22px;width:min(480px,92vw);max-height:90vh}
+dialog::backdrop{background:#0008}dialog label{display:block;font-size:.85rem;color:var(--mute);margin:10px 0 4px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.days{display:flex;gap:10px;flex-wrap:wrap}.days label{display:flex;gap:4px;align-items:center;margin:0;color:var(--ink)}
+.empty{color:var(--mute);padding:14px 0;margin:0}
+.dot{width:12px;height:12px;border-radius:50%;flex:none}
+.cf{position:fixed;top:-30px;width:10px;height:14px;border-radius:2px;pointer-events:none;z-index:9;animation:fall 1.8s ease-in forwards}@keyframes fall{to{transform:translateY(105vh) rotate(540deg)}}
+@media(max-width:800px){body{grid-template-columns:1fr}nav{position:static;height:auto;flex-direction:row;flex-wrap:wrap;border:0;border-bottom:1px solid var(--line);padding:12px}.brand{padding:0 10px 0 0}.tip{display:none}.grid{grid-template-columns:1fr}.filters{grid-template-columns:1fr 1fr}.filters input{grid-column:1/-1}.slot{grid-template-columns:78px 1fr}.slot>:last-child{grid-column:2}}
+</style>
+</head>
+<body>
+<nav>
+  <div class="brand">Tempo</div>
+  <a data-v="dash">Dashboard</a><a data-v="tasks">Tasks</a><a data-v="sched">Schedule</a><a data-v="stats">Analytics</a>
+  <a id="settings">AI settings</a>
+  <div style="flex:1"></div>
+  <div class="tip">Tip: press <b>Plan my day</b> and Tempo fits your tasks around your classes. Or snap a photo of your homework list.</div>
+</nav>
+<main id="app"></main>
+<div id="dock" class="dock" hidden></div>
+<dialog id="dlg"></dialog>
+<input type="file" id="photo" accept="image/*" hidden>
+
+<script>
+/* ---------- state ---------- */
+const KEY='tempo-planner-v1',DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],CATS=['School','Personal','Work','Health','Other'];
+const W={high:3,medium:2,low:1},COL=['#3d3df5','#e8452c','#1f9d63','#f0a020','#a13dc4','#0a9db8','#888888'];
+const $=s=>document.querySelector(s),uid=()=>Math.random().toString(36).slice(2,9);
+let S={tasks:[],classes:[],events:[],blocks:[],logs:[],plan:null,avail:{},apiKey:'',model:'claude-sonnet-5-5',timer:null};
+try{Object.assign(S,JSON.parse(localStorage.getItem(KEY)||'{}'))}catch{}
+S.tasks.forEach(t=>{if(!t.status)t.status=t.done?'done':'pending'});
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch{}};
+let view='dash',stab='classes',filter='all',query='',fcat='',fpri='',coach='',selMode=false;
+const sel=new Set(),exp=new Set();
+
+/* ---------- helpers ---------- */
+const pad=n=>String(n).padStart(2,'0');
+const isoLocal=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const dayKey=d=>isoLocal(new Date(d)).slice(0,10);
+const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
+const fromMin=m=>{const h=Math.floor(m/60);return `${(h+11)%12+1}:${pad(m%60)} ${h>=12?'PM':'AM'}`};
+const dur=m=>m>=60?`${Math.floor(m/60)}h ${m%60}m`:`${m}m`;
+const fmtDue=s=>new Date(s).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const logged=id=>S.logs.filter(l=>l.taskId===id).reduce((a,l)=>a+l.mins,0);
+const isOpen=t=>t.status!=='done',overdue=t=>isOpen(t)&&new Date(t.due)<new Date();
+const byDue=(a,b)=>new Date(a.due)-new Date(b.due);
+const sum=a=>a.reduce((x,y)=>x+y,0);
+const opts=(a,v)=>a.map(x=>`<option ${x===v?'selected':''}>${x}</option>`).join('');
+const avail=d=>S.avail[d]||{on:true,start:'08:00',end:'21:00'};
+/* self-calibrating estimates: Tempo learns how long your tasks really take */
+const factor=()=>{const d=S.tasks.filter(t=>t.status==='done'&&logged(t.id)>0),e=sum(d.map(t=>t.est));return e&&d.length>=2?Math.min(2,Math.max(.7,sum(d.map(t=>logged(t.id)))/e)):1};
+const need=t=>Math.max(5,Math.round(t.est*factor())-logged(t.id));
+/* XP, levels, streaks */
+const xp=()=>sum(S.tasks.filter(t=>t.status==='done').map(t=>10+W[t.priority]*5+(new Date(t.doneAt)<=new Date(t.due)?10:0)))+Math.floor(sum(S.logs.map(l=>l.mins))/5);
+const streak=()=>{const ds=new Set([...S.logs.map(l=>dayKey(l.date)),...S.tasks.filter(t=>t.doneAt).map(t=>dayKey(t.doneAt))]);let n=0,d=new Date();if(!ds.has(dayKey(d)))d.setDate(d.getDate()-1);while(ds.has(dayKey(d))){n++;d.setDate(d.getDate()-1)}return n};
+function levelHTML(){const x=xp(),L=Math.floor(Math.sqrt(x/50))+1,lo=50*(L-1)**2,hi=50*L*L;
+  return `<div class="panel row" style="margin-bottom:16px"><div style="font:700 1.6rem 'Bricolage Grotesque'">Lv ${L}</div><div class="grow"><div class="meta">${x} XP · ${hi-x} to level ${L+1}</div><div class="bar" style="margin-top:6px"><i style="width:${(x-lo)/(hi-lo)*100}%"></i></div></div><div><b>${streak()}</b> day streak</div></div>`}
+/* 7-day workload forecast: spreads remaining work over the days before each deadline */
+function forecast(){
+  const now=new Date(),days=[...Array(7)].map((_,i)=>{const d=new Date(now);d.setDate(d.getDate()+i);const a=avail(d.getDay()),el=i?0:Math.max(0,now.getHours()*60+now.getMinutes()-toMin(a.start));
+    return{d,need:0,free:a.on?Math.max(0,toMin(a.end)-toMin(a.start)-sum(busyFor(d).map(b=>b.e-b.s))-el):0}});
+  S.tasks.filter(isOpen).forEach(t=>{const idx=Math.min(6,Math.max(0,Math.floor((new Date(t.due)-now)/864e5)));for(let i=0;i<=idx;i++)days[i].need+=need(t)/(idx+1)});
+  return days}
+function forecastHTML(){
+  const fc=forecast(),bad=fc.filter(d=>d.need>0&&d.need>=d.free);
+  const col=d=>!d.need?'var(--line)':d.need>=d.free?'var(--bad)':d.need>d.free*.7?'var(--warn)':'var(--ok)';
+  return `<div class="panel span"><h2>Workload forecast: next 7 days</h2><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px">${fc.map(d=>`<div style="text-align:center"><div class="bar" style="height:70px;display:flex;align-items:flex-end;border-radius:10px"><i style="width:100%;height:${d.free?Math.min(100,d.need/d.free*100):d.need?100:0}%;background:${col(d)}"></i></div><div class="meta">${DAYS[d.d.getDay()]}</div><div class="meta">${dur(Math.round(d.need))}</div></div>`).join('')}</div>
+  <p class="meta" style="margin:10px 0 0">${bad.length?`Warning: ${bad.map(d=>DAYS[d.d.getDay()]).join(', ')} ${bad.length>1?'are':'is'} overloaded. Move a deadline, add availability, or break a task down.`:'Your load looks manageable.'} Plans use your real pace (×${factor().toFixed(2)} your estimates).</p></div>`}
+const burst=()=>{if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;for(let i=0;i<28;i++){const e=document.createElement('span');e.className='cf';e.style.background=['#3d3df5','#1f9d63','#f0a020','#e8452c'][i%4];e.style.left=Math.random()*100+'vw';e.style.animationDelay=Math.random()*.4+'s';document.body.append(e);setTimeout(()=>e.remove(),2400)}};
+
+/* ---------- quick add: plain English -> task ---------- */
+function parseQuick(text){
+  let s=text,t={id:uid(),status:'pending',priority:'medium',category:'School',est:30,repeat:false,notes:''};
+  const take=(re,fn)=>{const m=s.match(re);if(m){fn(m);s=s.replace(re,' ')}};
+  take(/\b(high|urgent|!!)\b/i,()=>t.priority='high');take(/\blow\b/i,()=>t.priority='low');
+  take(/\b(\d+(?:\.\d+)?)\s?(?:h|hr|hrs|hours?)\b/i,m=>t.est=Math.round(m[1]*60));
+  take(/\b(\d+)\s?(?:m|min|mins|minutes?)\b/i,m=>t.est=+m[1]);
+  take(/\bweekly\b/i,()=>t.repeat=true);
+  CATS.forEach(c=>take(new RegExp('#'+c+'\\b','i'),()=>t.category=c));
+  const d=new Date();d.setHours(23,0,0,0);
+  take(/\btomorrow\b/i,()=>d.setDate(d.getDate()+1));take(/\btoday\b/i,()=>{});
+  take(/\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\b/i,m=>{const i=DAYS.findIndex(x=>x.toLowerCase()===m[1].toLowerCase());d.setDate(d.getDate()+((i-d.getDay()+7)%7||7))});
+  take(/\b(?:at\s)?(\d{1,2})(?::(\d{2}))?\s?(am|pm)\b/i,m=>d.setHours(+m[1]%12+(m[3].toLowerCase()==='pm'?12:0),+(m[2]||0),0,0));
+  t.due=isoLocal(d);t.title=s.replace(/\b(due|by)\b/gi,' ').replace(/\s+/g,' ').trim()||text;return t;
+}
+
+/* ---------- planner ---------- */
+function busyFor(d){
+  const k=dayKey(d),w=d.getDay();
+  return [...S.classes.filter(c=>c.days.includes(w)).map(c=>({...c,kind:'Class'})),
+    ...S.blocks.filter(c=>c.days.includes(w)).map(c=>({...c,kind:'Time block'})),
+    ...S.events.filter(e=>e.date===k).map(e=>({...e,kind:'Event'}))]
+    .map(x=>({s:toMin(x.start),e:toMin(x.end),kind:x.kind,name:x.name,loc:x.loc,color:x.color})).sort((a,b)=>a.s-b.s);
+}
+function score(t,now){const h=(new Date(t.due)-now)/36e5;return W[t.priority]*10+(h<0?40:Math.max(0,30-h/2))}
+function generatePlan(){
+  const now=new Date(),av=avail(now.getDay()),busy=busyFor(now).map(b=>[b.s,b.e]);
+  if(!av.on){S.plan={date:dayKey(now),items:[],leftover:0,off:true};save();render();return}
+  const end=toMin(av.end);let cur=Math.max(toMin(av.start),Math.ceil((now.getHours()*60+now.getMinutes())/15)*15);
+  const q=S.tasks.filter(isOpen).map(t=>({t,left:need(t),s:score(t,now)})).sort((a,b)=>b.s-a.s),items=[];
+  const inBusy=m=>busy.find(([a,b])=>m>=a&&m<b);
+  while(q.length&&cur<end){
+    const c=inBusy(cur);if(c){cur=c[1];continue}
+    const nx=busy.filter(([a])=>a>cur).sort((a,b)=>a[0]-b[0])[0],free=Math.min(end,nx?nx[0]:end)-cur;
+    if(free<15){cur+=Math.max(free,1);continue}
+    const x=q[0],ch=Math.min(x.left,50,free);
+    items.push({taskId:x.t.id,start:cur,end:cur+ch,type:'task'});cur+=ch;x.left-=ch;if(x.left<=0)q.shift();
+    if(q.length&&cur+10<=end&&!inBusy(cur)){items.push({start:cur,end:cur+10,type:'break'});cur+=10}
+  }
+  S.plan={date:dayKey(now),items,leftover:q.length};save();render();
+}
+
+/* ---------- Claude API (coach + photo import) ---------- */
+async function claude(content,system,max=800){
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':S.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:S.model,max_tokens:max,system,messages:[{role:'user',content}]})});
+  const j=await r.json();if(j.error)throw new Error(j.error.message);return j.content.map(c=>c.text||'').join('');
+}
+async function askCoach(){
+  if(!S.apiKey)return openSettings('Add an API key to use the coach.');
+  coach='Thinking…';render();const now=new Date();
+  const ctx={now:now.toString(),busyToday:busyFor(now).map(b=>`${b.name} ${fromMin(b.s)}-${fromMin(b.e)}`),
+    tasks:S.tasks.filter(isOpen).map(t=>({title:t.title,due:t.due,priority:t.priority,estMin:t.est,loggedMin:logged(t.id)})),
+    plan:(S.plan?.items||[]).filter(i=>i.type==='task').map(i=>({task:S.tasks.find(t=>t.id===i.taskId)?.title,from:fromMin(i.start),to:fromMin(i.end)}))};
+  try{coach=await claude(JSON.stringify(ctx),"You are a calm, practical planning coach for a student. Reply in under 120 words: 1) the one thing to start now and why, 2) one risk in today's plan, 3) one concrete tweak. Suggest, never command.",400)}
+  catch(e){coach='Could not reach the API: '+e.message}
+  render();
+}
+function shrink(file){return new Promise((ok,no)=>{const i=new Image();i.onerror=()=>no(new Error('That file is not a readable image.'));
+  i.onload=()=>{const k=Math.min(1,1600/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);ok(c.toDataURL('image/jpeg',.85).split(',')[1])};i.src=URL.createObjectURL(file)})}
+async function importPhoto(file){
+  const dlg=$('#dlg');dlg.innerHTML='<h2>Reading your photo…</h2><p class="meta">Claude is finding the tasks. This takes a few seconds.</p>';dlg.showModal();
+  try{
+    const data=await shrink(file),today=dayKey(new Date());
+    const txt=await claude([{type:'image',source:{type:'base64',media_type:'image/jpeg',data}},{type:'text',text:`Today is ${today}. List every task, assignment or to-do in this image. Reply with ONLY a JSON array, no other text. Each item: {"title":string,"due":"YYYY-MM-DDTHH:MM" or null,"priority":"high"|"medium"|"low","category":"School"|"Personal"|"Work"|"Health"|"Other","estMinutes":number}. If a due date has no year use the next upcoming date; if no time use 23:00.`}],'You turn photos of handwritten or printed task lists into structured data.',1500);
+    const list=JSON.parse(txt.slice(txt.indexOf('['),txt.lastIndexOf(']')+1));
+    if(!list.length)throw new Error('No tasks found. Try a clearer, closer photo.');
+    reviewImport(list);
+  }catch(e){dlg.innerHTML=`<h2>Couldn't read that photo</h2><p>${esc(e.message)}</p><div class="row" style="justify-content:flex-end"><button data-a="close">Close</button></div>`}
+}
+function reviewImport(list){
+  const tmr=new Date();tmr.setDate(tmr.getDate()+1);tmr.setHours(23,0,0,0);
+  $('#dlg').innerHTML=`<form method="dialog" id="f"><h2>Found ${list.length} task${list.length>1?'s':''}</h2><p class="meta">Untick anything you don't want. Fix titles or dates here.</p>
+  ${list.map((t,i)=>`<div class="li" style="align-items:flex-start"><input type="checkbox" name="on${i}" checked aria-label="Include"><div class="grow"><input name="ti${i}" value="${esc(t.title)}"><div class="two" style="margin-top:6px"><input type="datetime-local" name="du${i}" value="${/^\d{4}-\d\d-\d\dT\d\d:\d\d/.test(t.due||'')?t.due.slice(0,16):isoLocal(tmr)}"><span class="meta">${esc(t.priority||'medium')} · ${esc(t.category||'School')} · ${t.estMinutes||30}m</span></div></div></div>`).join('')}
+  <div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="close">Cancel</button><button class="pri">Add selected tasks</button></div></form>`;
+  $('#f').onsubmit=e=>{const f=new FormData(e.target);list.forEach((t,i)=>{if(f.get('on'+i))S.tasks.push({id:uid(),status:'pending',notes:'',repeat:false,title:f.get('ti'+i).trim()||t.title,due:f.get('du'+i),
+    priority:W[t.priority]?t.priority:'medium',category:CATS.includes(t.category)?t.category:'School',est:+t.estMinutes||30})});save();render()};
+}
+
+/* ---------- views ---------- */
+const slotHTML=x=>{
+  const time=`<small>${fromMin(x.s)}<br>${fromMin(x.e)}</small>`;
+  if(x.type==='break')return `<div class="slot brk">${time}<small>Break</small><span></span></div>`;
+  if(x.type==='task'){const t=S.tasks.find(t=>t.id===x.taskId);return t?`<div class="slot">${time}<div><h3>${esc(t.title)}</h3><small>${dur(x.e-x.s)} focus · due ${fmtDue(t.due)}</small></div><button data-a="start" data-id="${t.id}">Start</button></div>`:''}
+  return `<div class="slot" style="border-color:${x.color||'var(--warn)'}">${time}<div><h3>${esc(x.name)}</h3>${x.loc?`<small>${esc(x.loc)}</small>`:''}</div><span class="tag">${x.kind}</span></div>`};
+function viewDash(){
+  const now=new Date(),k=dayKey(now),op=S.tasks.filter(isOpen).sort(byDue);
+  const act=S.timer&&S.tasks.find(t=>t.id===S.timer.id);
+  const today=sum(S.logs.filter(l=>dayKey(l.date)===k).map(l=>l.mins)),wk=sum(S.logs.filter(l=>now-new Date(l.date)<7*864e5).map(l=>l.mins));
+  const alerts=op.filter(t=>new Date(t.due)-now<48*36e5);
+  const items=[...busyFor(now).map(b=>({...b,type:'busy'})),...(S.plan&&S.plan.date===k?S.plan.items:[])].map(i=>({...i,s:i.s??i.start,e:i.e??i.end}));items.sort((a,b)=>a.s-b.s);
+  const li=t=>`<div class="li"><div><b>${esc(t.title)}</b><div class="meta">${fmtDue(t.due)} · ${t.category}</div></div>${overdue(t)?'<span class="tag od">Overdue</span>':`<span class="tag ${t.priority}">${t.priority}</span>`}</div>`;
+  const st=(n,l)=>`<div class="stat"><span class="meta">${l}</span><b>${n}</b></div>`;
+  return `<div class="head"><div><h1>${now.toLocaleDateString([],{weekday:'long'})}</h1><p>${now.toLocaleDateString([],{month:'long',day:'numeric'})}</p></div>
+  <div class="row wrap"><button data-a="photo">Add from photo</button><button data-a="coach">Ask Claude</button><button class="pri" data-a="plan">Plan my day</button></div></div>
+  <div class="quick"><input id="qa" placeholder='Type a task: "Math worksheet tomorrow 5pm high 45m"' aria-label="Quick add task"><button data-a="voice" aria-label="Speak a task">Speak</button><button class="pri" data-a="quick">Add task</button><button data-a="new">More options</button></div>
+  <p class="hint">Dates, times, priority and length are picked out of your sentence. Tap Speak to say it instead.</p>${levelHTML()}
+  ${coach?`<div class="panel" style="margin-bottom:16px"><h2>Coach</h2><div class="coach">${esc(coach)}</div></div>`:''}
+  <div class="grid">
+   ${act?`<div class="panel active"><span class="meta">Working on</span><h2 style="margin:4px 0">${esc(act.title)}</h2><b id="live">00:00</b><div class="row" style="justify-content:center;margin-top:12px"><button data-a="stop">Stop and log</button><button data-a="finish">Finish task</button></div></div>`
+   :`<div class="panel" style="text-align:center"><h2>No active task</h2><p class="meta">Press Start on any task to track your focus time.</p></div>`}
+   <div class="panel"><h2>Productivity</h2><div class="stats">${st(dur(today),"Today's focus")}${st(dur(wk),'This week')}${st(S.tasks.filter(t=>!isOpen(t)).length,'Completed')}${st(S.tasks.filter(t=>t.status==='progress').length,'In progress')}</div><p class="meta" style="margin:10px 0 0">${op.length} pending or in progress</p></div>
+   <div class="panel"><div class="row"><h2 class="grow">Today's schedule</h2>${items.length?'<button class="ghost" data-a="ics">Export to calendar</button>':''}</div>${items.map(slotHTML).join('')||'<p class="empty">Nothing yet. Press Plan my day.</p>'}${S.plan?.date===k&&S.plan.off?'<p class="meta">Today is marked unavailable in Schedule → Availability.</p>':''}${S.plan?.date===k&&S.plan.leftover?`<p class="meta">${S.plan.leftover} task(s) didn't fit and roll to tomorrow.</p>`:''}</div>
+   <div><div class="panel" style="margin-bottom:16px"><h2>Deadline alerts</h2>${alerts.slice(0,6).map(li).join('')||'<p class="empty">Nothing due in the next 2 days.</p>'}
+    <div class="row" style="margin-top:10px"><button data-a="notify">Enable browser alerts</button>${alerts.some(overdue)?'<button data-a="resched">Move overdue to tomorrow</button>':''}</div></div>
+   <div class="panel"><h2>Upcoming deadlines</h2>${op.slice(0,5).map(li).join('')||'<p class="empty">All clear.</p>'}</div></div>${forecastHTML()}
+  </div>`;
+}
+function taskRow(t){
+  const od=overdue(t),l=logged(t.id),on=S.timer?.id===t.id;
+  return `<div class="task ${t.status==='done'?'done':''}"><div class="row">
+  ${selMode?`<input type="checkbox" data-a="selone" data-id="${t.id}" ${sel.has(t.id)?'checked':''} aria-label="Select">`:`<button class="chk" data-a="toggle" data-id="${t.id}" aria-label="Mark done">${t.status==='done'?'✓':''}</button>`}
+  <div class="grow"><h3>${esc(t.title)}</h3><div class="meta"><span class="tag ${t.priority}">${t.priority}</span><span class="tag">${esc(t.category)}</span>${t.status==='progress'?'<span class="tag progress">In progress</span>':''}${od?'<span class="tag od">Overdue</span>':''}${fmtDue(t.due)}${t.repeat?' · weekly':''}</div></div>
+  <button class="ghost" data-a="exp" data-id="${t.id}" aria-label="Details">${exp.has(t.id)?'▲':'▼'}</button></div>
+  <div class="row wrap" style="margin:8px 0 0 34px">${t.status==='done'?'':`<button data-a="${on?'stop':'start'}" data-id="${t.id}">${on?'Stop and log':'Start'}</button><button data-a="log" data-id="${t.id}">Log time</button>`}<span class="meta">${dur(l)} logged of ${dur(t.est)}</span></div>
+  ${exp.has(t.id)?`<div class="detail">${t.notes?esc(t.notes):'<span class="meta">No notes.</span>'}</div><div class="row" style="margin:6px 0 0 34px"><button class="ghost" data-a="split" data-id="${t.id}">Break it down</button><button class="ghost" data-a="edit" data-id="${t.id}">Edit</button><button class="ghost" data-a="del" data-id="${t.id}">Delete</button></div>`:''}</div>`;
+}
+function viewTasks(){
+  const list=S.tasks.filter(t=>filter==='all'||(filter==='done'?t.status==='done':filter==='progress'?t.status==='progress':t.status==='pending'))
+    .filter(t=>t.title.toLowerCase().includes(query.toLowerCase())&&(!fcat||t.category===fcat)&&(!fpri||t.priority===fpri)).sort((a,b)=>(a.status==='done')-(b.status==='done')||byDue(a,b));
+  const n=f=>S.tasks.filter(t=>f==='all'||t.status===f).length;
+  const tab=(k,l)=>`<button class="${filter===k?'on':''}" data-a="filter" data-id="${k}">${l} (${n(k)})</button>`;
+  return `<div class="head"><div><h1>Tasks</h1><p>${S.tasks.length} tasks total</p></div><div class="row wrap"><button data-a="photo">Add from photo</button><button data-a="selmode">${selMode?'Cancel select':'Select'}</button><button class="pri" data-a="new">New task</button></div></div>
+  <div class="filters"><input id="search" placeholder="Search tasks" value="${esc(query)}" aria-label="Search"><select id="fcat" aria-label="Category"><option value="">All categories</option>${opts(CATS,fcat)}</select><select id="fpri" aria-label="Priority"><option value="">All priorities</option>${opts(['high','medium','low'],fpri)}</select></div>
+  <div class="tabs">${tab('all','All')}${tab('pending','Pending')}${tab('progress','In progress')}${tab('done','Completed')}</div>
+  ${selMode?`<div class="panel row" style="margin-bottom:12px"><span class="grow">${sel.size} selected</span><button data-a="bulkdone">Mark done</button><button data-a="bulkdel">Delete</button></div>`:''}
+  <div class="panel">${list.map(taskRow).join('')||'<p class="empty">No tasks match. Add one with New task or a photo.</p>'}</div>`;
+}
+function viewSched(){
+  const tabs=[['classes','Classes'],['events','Events'],['blocks','Time blocks'],['avail','Availability']];
+  const kind={classes:'class',events:'event',blocks:'block'}[stab];
+  let body;
+  if(stab==='avail')body=`<div class="panel"><p class="meta">The hours Tempo may schedule focus time each day.</p>${DAYS.map((d,i)=>{const a=avail(i);return `<div class="li"><label class="row" style="margin:0;color:var(--ink);width:90px"><input type="checkbox" data-av="${i}" data-f="on" ${a.on?'checked':''}>${d}</label><input type="time" data-av="${i}" data-f="start" value="${a.start}" style="width:130px"><span>to</span><input type="time" data-av="${i}" data-f="end" value="${a.end}" style="width:130px"></div>`}).join('')}</div>`;
+  else body=S[stab].map(c=>`<div class="panel row" style="margin-bottom:12px"><span class="dot" style="background:${c.color}"></span><div class="grow"><h3>${esc(c.name)}</h3><div class="meta">${c.date?new Date(c.date+'T12:00').toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}):c.days.map(d=>DAYS[d]).join(', ')} · ${fromMin(toMin(c.start))} – ${fromMin(toMin(c.end))}${c.loc?`<br>${esc(c.loc)}`:''}</div></div><button class="ghost" data-a="edits" data-id="${c.id}">Edit</button><button class="ghost" data-a="dels" data-id="${c.id}">Delete</button></div>`).join('')||`<p class="empty">Nothing here yet.</p>`;
+  return `<div class="head"><div><h1>Schedule</h1><p>Classes, events and time blocks that Tempo plans around</p></div>${stab==='avail'?'':`<button class="pri" data-a="adds">Add ${kind}</button>`}</div>
+  <div class="tabs">${tabs.map(([k,l])=>`<button class="${stab===k?'on':''}" data-a="stab" data-id="${k}">${l}</button>`).join('')}</div>${body}`;
+}
+function viewStats(){
+  const all=S.tasks,done=all.filter(t=>!isOpen(t)),now=new Date(),k=dayKey(now);
+  const total=sum(S.logs.map(l=>l.mins)),wk=sum(S.logs.filter(l=>now-new Date(l.date)<7*864e5).map(l=>l.mins));
+  const past=all.filter(t=>!isOpen(t)||new Date(t.due)<now),onT=done.filter(t=>new Date(t.doneAt)<=new Date(t.due)),dueT=all.filter(t=>dayKey(t.due)===k);
+  const est=done.filter(t=>logged(t.id)).map(t=>Math.min(t.est,logged(t.id))/Math.max(t.est,logged(t.id)));
+  const pct=(a,b)=>b?Math.round(a/b*100)+'%':'–';
+  const days=[...Array(7)].map((_,i)=>{const d=new Date();d.setDate(d.getDate()-6+i);return{l:DAYS[d.getDay()],m:sum(S.logs.filter(x=>dayKey(x.date)===dayKey(d)).map(x=>x.mins))}});
+  const mx=Math.max(60,...days.map(d=>d.m));
+  const bars=days.map((d,i)=>{const h=d.m/mx*110;return `<rect x="${i*52+8}" y="${125-h}" width="34" height="${h}" rx="8" fill="var(--acc)"/><text x="${i*52+25}" y="145" text-anchor="middle" font-size="11" fill="var(--mute)">${d.l}</text>${d.m?`<text x="${i*52+25}" y="${119-h}" text-anchor="middle" font-size="10" fill="var(--ink)">${d.m}m</text>`:''}`}).join('');
+  const cat=CATS.map((c,i)=>({c,col:COL[i],m:sum(S.logs.filter(l=>S.tasks.find(t=>t.id===l.taskId)?.category===c).map(l=>l.mins))})).filter(x=>x.m);
+  let off=0;const arcs=cat.map(x=>{const len=x.m/total*314.16,s=`<circle r="50" cx="70" cy="70" fill="none" stroke="${x.col}" stroke-width="22" stroke-dasharray="${len} ${314.16-len}" stroke-dashoffset="${-off}" transform="rotate(-90 70 70)"/>`;off+=len;return s}).join('');
+  const st=(n,l,s='')=>`<div class="panel stat"><span class="meta">${l}</span><b>${n}</b><span class="meta">${s}</span></div>`;
+  const ov=all.filter(overdue);
+  return `<div class="head"><div><h1>Analytics</h1><p>Track your productivity and progress</p></div></div>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">${st(total?dur(total):'0m','Total focus time')}${st(wk?dur(wk):'0m','This week')}${st(pct(done.length,all.length),'Completion rate',`${done.length}/${all.length} tasks`)}${st(est.length?Math.round(sum(est)/est.length*100)+'%':'–','Estimation accuracy')}</div>
+  <div class="panel" style="margin-bottom:16px"><h2>Deadline performance</h2><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin:0">
+   <div><span class="meta">Due today</span><div class="stat" style="background:none;padding:0"><b>${dueT.filter(t=>!isOpen(t)).length}/${dueT.length}</b></div></div>
+   <div><span class="meta">Overdue</span><div class="stat" style="background:none;padding:0"><b>${ov.length}</b></div><div class="meta">${ov.slice(0,3).map(t=>'• '+esc(t.title)).join('<br>')}${ov.length>3?`<br>+${ov.length-3} more`:''}</div></div>
+   <div><span class="meta">On-time rate</span><div class="stat" style="background:none;padding:0"><b>${pct(onT.length,past.length)}</b></div><div class="bar"><i style="width:${past.length?onT.length/past.length*100:0}%;background:var(--ok)"></i></div><span class="meta">${onT.length} of ${past.length} past-due tasks on time</span></div></div></div>
+  <div class="grid"><div class="panel"><h2>Time spent (last 7 days)</h2><svg viewBox="0 0 370 152" width="100%" role="img" aria-label="Focus minutes per day">${bars}</svg></div>
+  <div class="panel"><h2>Time by category</h2>${cat.length?`<div class="row"><svg viewBox="0 0 140 140" width="140" role="img" aria-label="Time by category">${arcs}</svg><div>${cat.map(x=>`<div class="row"><span class="dot" style="background:${x.col}"></span>${x.c} <span class="meta">${dur(x.m)}</span></div>`).join('')}</div></div>`:'<p class="empty">Start a timer on a task to see this.</p>'}</div></div>`;
+}
+
+/* ---------- dialogs ---------- */
+function openDlg(html,onSubmit){const d=$('#dlg');d.innerHTML=`<form method="dialog" id="f">${html}<div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="close">Cancel</button><button class="pri">Save</button></div></form>`;d.showModal();$('#f').onsubmit=e=>{onSubmit(new FormData(e.target));save();render()}}
+function taskForm(t){
+  t=t||{title:'',notes:'',priority:'medium',category:'School',est:30,due:isoLocal(new Date(Date.now()+864e5)),repeat:false,status:'pending'};
+  openDlg(`<h2>${t.id?'Edit task':'New task'}</h2><label>Title</label><input name="title" required value="${esc(t.title)}">
+  <div class="two"><div><label>Priority</label><select name="priority">${opts(['high','medium','low'],t.priority)}</select></div><div><label>Category</label><select name="category">${opts(CATS,t.category)}</select></div>
+  <div><label>Due</label><input type="datetime-local" name="due" required value="${t.due}"></div><div><label>Time needed (min)</label><input type="number" name="est" min="5" step="5" value="${t.est}"></div></div>
+  <label>Notes</label><textarea name="notes" rows="2">${esc(t.notes)}</textarea><label class="row" style="color:var(--ink)"><input type="checkbox" name="repeat" ${t.repeat?'checked':''}> Repeats weekly</label>`,f=>{
+    const o={title:f.get('title').trim(),priority:f.get('priority'),category:f.get('category'),due:f.get('due'),est:+f.get('est')||30,notes:f.get('notes'),repeat:!!f.get('repeat')};
+    if(t.id)Object.assign(t,o);else S.tasks.push({id:uid(),status:'pending',...o})});
+}
+function schedForm(list,c){
+  const ev=list==='events';c=c||{name:'',days:[],date:dayKey(new Date()),start:'16:00',end:'17:00',loc:'',color:COL[S[list].length%COL.length]};
+  openDlg(`<h2>${c.id?'Edit':'Add'} ${{classes:'class',events:'event',blocks:'time block'}[list]}</h2><label>Name</label><input name="name" required value="${esc(c.name)}">
+  ${ev?`<label>Date</label><input type="date" name="date" required value="${c.date}">`:`<label>Days</label><div class="days">${DAYS.map((d,i)=>`<label><input type="checkbox" name="d" value="${i}" ${c.days.includes(i)?'checked':''}>${d}</label>`).join('')}</div>`}
+  <div class="two"><div><label>Starts</label><input type="time" name="start" value="${c.start}" required></div><div><label>Ends</label><input type="time" name="end" value="${c.end}" required></div></div>
+  <div class="two"><div><label>Location (optional)</label><input name="loc" value="${esc(c.loc)}"></div><div><label>Color</label><input type="color" name="color" value="${c.color}"></div></div>`,f=>{
+    const o={name:f.get('name').trim(),start:f.get('start'),end:f.get('end'),loc:f.get('loc').trim(),color:f.get('color'),...(ev?{date:f.get('date')}:{days:f.getAll('d').map(Number)})};
+    if(c.id)Object.assign(c,o);else S[list].push({id:uid(),...o})});
+}
+function openSettings(msg){
+  const d=$('#dlg');d.innerHTML=`<form method="dialog" id="f"><h2>AI settings</h2><p class="meta">${esc(msg||'Optional.')} Planning works offline. The coach and photo import use Claude, which needs an Anthropic API key. The key stays in this browser and is sent only to api.anthropic.com.</p>
+  <label>API key</label><input name="k" type="password" value="${esc(S.apiKey)}" placeholder="sk-ant-…"><label>Model</label><input name="m" value="${esc(S.model)}">
+  <div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="close">Cancel</button><button class="pri">Save settings</button></div></form>`;
+  d.showModal();$('#f').onsubmit=e=>{const f=new FormData(e.target);S.apiKey=f.get('k').trim();S.model=f.get('m').trim()||'claude-sonnet-5-5';save()};
+}
+
+/* ---------- timer + alerts ---------- */
+function stopTimer(){if(!S.timer)return;S.logs.push({taskId:S.timer.id,mins:Math.max(1,Math.round((Date.now()-S.timer.start)/6e4)),date:new Date().toISOString()});S.timer=null;save()}
+function tick(){
+  const s=S.timer?Math.floor((Date.now()-S.timer.start)/1000):0,txt=`${pad(Math.floor(s/60))}:${pad(s%60)}`;
+  if($('#live'))$('#live').textContent=txt;
+  const d=$('#dock');d.hidden=!S.timer||view==='dash';
+  if(!d.hidden)d.innerHTML=`<span>${esc(S.tasks.find(t=>t.id===S.timer.id)?.title||'')}</span><b>${txt}</b><button data-a="stop">Stop and log</button>`;
+}
+setInterval(tick,1000);
+setInterval(()=>{if(!('Notification' in window)||Notification.permission!=='granted')return;
+  S.tasks.filter(t=>isOpen(t)&&!t.notified&&(new Date(t.due)-Date.now())<36e5).forEach(t=>{t.notified=1;new Notification('Due soon: '+t.title,{body:'Due '+fmtDue(t.due)});save()})},6e4);
+
+/* ---------- actions ---------- */
+const get=(a,id)=>a.find(x=>x.id===id);
+const A={
+  plan:generatePlan,coach:askCoach,close:()=>$('#dlg').close(),photo:()=>S.apiKey?$('#photo').click():openSettings('Add an API key to read photos.'),
+  quick(){const v=$('#qa').value.trim();if(!v)return;S.tasks.push(parseQuick(v));save();render()},
+  new:()=>taskForm(),edit:id=>taskForm(get(S.tasks,id)),
+  del(id){S.tasks=S.tasks.filter(t=>t.id!==id);save();render()},
+  filter(id){filter=id;render()},stab(id){stab=id;render()},
+  adds:()=>schedForm(stab),edits:id=>schedForm(stab,get(S[stab],id)),dels(id){S[stab]=S[stab].filter(x=>x.id!==id);save();render()},
+  exp(id){exp.has(id)?exp.delete(id):exp.add(id);render()},
+  selmode(){selMode=!selMode;sel.clear();render()},selone(id){sel.has(id)?sel.delete(id):sel.add(id);render()},
+  bulkdone(){S.tasks.filter(t=>sel.has(t.id)).forEach(t=>{t.status='done';t.doneAt=new Date().toISOString()});sel.clear();selMode=false;save();render()},
+  bulkdel(){if(confirm(`Delete ${sel.size} task(s)?`)){S.tasks=S.tasks.filter(t=>!sel.has(t.id));sel.clear();selMode=false;save();render()}},
+  start(id){stopTimer();S.timer={id,start:Date.now()};get(S.tasks,id).status='progress';save();render()},
+  stop(){stopTimer();render()},
+  finish(){const t=get(S.tasks,S.timer.id);stopTimer();A.toggle(t.id,true)},
+  log(id){const m=parseInt(prompt('How many minutes?','30'));if(m>0){S.logs.push({taskId:id,mins:m,date:new Date().toISOString()});save();render()}},
+  toggle(id,forceDone){const t=get(S.tasks,id),d=forceDone||t.status!=='done';t.status=d?'done':'pending';t.doneAt=d?new Date().toISOString():null;if(d)burst();
+    if(d&&t.repeat){const n=new Date(t.due);n.setDate(n.getDate()+7);S.tasks.push({...t,id:uid(),status:'pending',doneAt:null,notified:0,due:isoLocal(n)})}save();render()},
+  resched(){const d=new Date();d.setDate(d.getDate()+1);d.setHours(23,0,0,0);S.tasks.filter(overdue).forEach(t=>t.due=isoLocal(d));save();render()},
+  voice(){const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R)return alert('Voice input is not supported in this browser. Try Chrome or Safari.');const r=new R();r.lang='en-US';r.onresult=e=>{$('#qa').value=e.results[0][0].transcript;A.quick()};r.start()},
+  async split(id){const t=get(S.tasks,id);if(!S.apiKey)return openSettings('Add an API key to break tasks down.');
+    const d=$('#dlg');d.innerHTML='<h2>Breaking it down…</h2>';d.showModal();
+    try{const txt=await claude(`Task: "${t.title}". Notes: ${t.notes||'none'}. Due ${t.due}. Total time ${t.est} min. Break it into 3-6 concrete steps a student can finish in one sitting. Reply ONLY with a JSON array of {"title":string,"estMinutes":number}.`,'You split big tasks into small, concrete steps.',600);
+      reviewImport(JSON.parse(txt.slice(txt.indexOf('['),txt.lastIndexOf(']')+1)).map(x=>({...x,due:t.due,priority:t.priority,category:t.category})))}
+    catch(e){d.innerHTML=`<h2>Couldn't break that down</h2><p>${esc(e.message)}</p><button data-a="close">Close</button>`}},
+  ics(){const now=new Date(),k=dayKey(now).replace(/-/g,''),tm=m=>k+'T'+pad(Math.floor(m/60))+pad(m%60)+'00';
+    const it=[...busyFor(now).map(b=>({s:b.s,e:b.e,n:b.name})),...(S.plan?.date===dayKey(now)?S.plan.items.filter(i=>i.type==='task').map(i=>({s:i.start,e:i.end,n:'Focus: '+(get(S.tasks,i.taskId)?.title||'')})):[])];
+    const body=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Tempo//EN',...it.flatMap(x=>['BEGIN:VEVENT','UID:'+uid()+'@tempo','DTSTAMP:'+k+'T000000','DTSTART:'+tm(x.s),'DTEND:'+tm(x.e),'SUMMARY:'+x.n.replace(/[,;\n]/g,' '),'END:VEVENT']),'END:VCALENDAR'].join('\r\n');
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([body],{type:'text/calendar'}));a.download='tempo-today.ics';a.click()},
+  notify(){'Notification' in window?Notification.requestPermission().then(p=>alert(p==='granted'?'Alerts are on. Keep this tab open to get them.':'Alerts are blocked in your browser settings.')):alert('This browser does not support alerts.')}
+};
+document.addEventListener('click',e=>{
+  const n=e.target.closest('nav a[data-v]');if(n){view=n.dataset.v;render();return}
+  if(e.target.id==='settings'){openSettings();return}
+  const b=e.target.closest('[data-a]');if(b)A[b.dataset.a]?.(b.dataset.id);
+});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='qa')A.quick()});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.id==='photo'&&t.files[0]){importPhoto(t.files[0]);t.value=''}
+  if(t.dataset.av!==undefined){const a={...avail(t.dataset.av)};a[t.dataset.f]=t.dataset.f==='on'?t.checked:t.value;S.avail[t.dataset.av]=a;save()}
+  if(t.id==='fcat'){fcat=t.value;render()}if(t.id==='fpri'){fpri=t.value;render()}
+});
+document.addEventListener('input',e=>{if(e.target.id==='search'){query=e.target.value;const p=e.target.selectionStart;render();const s=$('#search');s.focus();s.setSelectionRange(p,p)}});
+function render(){
+  document.querySelectorAll('nav a[data-v]').forEach(a=>a.classList.toggle('on',a.dataset.v===view));
+  $('#app').innerHTML={dash:viewDash,tasks:viewTasks,sched:viewSched,stats:viewStats}[view]();tick();
+}
+render();
+</script>
+</body>
+</html>
