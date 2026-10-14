@@ -15,7 +15,7 @@ Tempo turns a messy to-do list into a realistic plan for today. It knows your cl
 **Extras**
 - **Workload forecast**: a 7-day chart of work left versus free time, with overload warnings before a crunch hits.
 - **Self-calibrating estimates**: Tempo learns how long your tasks really take and plans with your real pace.
-- **Break it down**: Claude splits a big task into small steps you review and add.
+- **Break it down**: splits a big task into small steps you review and add.
 - **Voice quick add**: tap Speak and say a task.
 - **XP, levels and streaks**, with confetti when you finish a task.
 - **Export to calendar**: download today's plan as an .ics file for Google, Apple or Outlook.
@@ -23,15 +23,15 @@ Tempo turns a messy to-do list into a realistic plan for today. It knows your cl
 **New in Tempo**
 - **Plan my day**: scheduler fits tasks around classes, events and blocks, with breaks.
 - **Quick add in plain English**: `Math worksheet tomorrow 5pm high 45m #School weekly`.
-- **Add from photo**: upload a picture of a handwritten or printed task list. Claude reads it, you review and edit the tasks, then add them.
-- **Ask Claude**: a short coaching note on today's plan.
+- **Add from photo**: upload a picture of a handwritten or printed task list. Text is read on your device, turned into tasks, and you review and edit them before they are added.
+- **Coach me**: a short coaching note on today's plan.
 
 ## Human + AI collaboration
 
 | Human | AI |
 |---|---|
-| Sets goals, classes, availability, final plan | Reads photos and turns them into structured tasks |
-| Reviews and edits every imported task before it is saved | Parses natural language, reviews the plan for risks |
+| Sets goals, classes, availability, final plan | Reads photos and turns them into draft tasks |
+| Reviews and edits every imported task before it is saved | Parses natural language, splits big tasks, flags risks in the plan |
 | Logs real time, which sharpens estimates | Suggests, never commands |
 
 The scheduler is a transparent algorithm (below), so you can see why a task landed where it did.
@@ -50,8 +50,8 @@ Anyone can create an account with an email and password. Forgot your password? T
 
 - **Auth and storage:** Supabase Auth (email + password, confirmation and reset emails) and one Postgres row per user.
 - **Row Level Security:** the database itself only lets a signed-in user read or write their own row (see `schema.sql`). Other users cannot see your data, even though the app code is public.
-- **Your Anthropic API key is never saved to your account.** It lives in the browser tab only and is cleared on sign out.
-- **A Content Security Policy** limits the page to talking to Supabase and the Anthropic API.
+- **No API keys and no AI accounts.** All AI features run on your device or inside the page. Photos never leave your browser.
+- **A Content Security Policy** limits the page to loading its own code and the on-device reader from jsDelivr (plus Supabase in cloud mode).
 - **Sign out** saves, clears everything from the screen and ends the session. Use it on shared computers.
 - Honest limits: data is encrypted in transit and at rest by Supabase, but it is not end-to-end encrypted, because email password recovery and end-to-end encryption cannot both work. Whoever owns the Supabase project can technically access the database. Two devices editing at once: the last save wins.
 
@@ -73,12 +73,13 @@ python3 -m http.server 8000   # open http://localhost:8000
 
 Local mode works when you open `index.html` directly (if your browser blocks encryption on files, use the command above). Cloud mode needs a real web address, because email links cannot point at a file. To let anyone use it, upload the folder to Netlify, Vercel or GitHub Pages and add that address to the Redirect URLs.
 
-### Turn on the AI features
+### The built-in AI (no key needed)
 
-1. Click **AI settings** and paste an Anthropic API key (console.anthropic.com). Default model: `claude-sonnet-5-5`.
-2. **Add from photo** on Dashboard or Tasks, **Break it down** on a task, or **Ask Claude** on Dashboard.
+Nothing to configure. Everything works the moment you open the app:
 
-The key goes straight from your browser to `api.anthropic.com`. Use a key with a low spend limit and never share one key across users. For production, add a small server that holds the key and rate-limits each account.
+- **Add from photo** uses Tesseract.js, an on-device text reader. The photo stays in your browser. The first use downloads the reader (a few MB) from jsDelivr, so it needs an internet connection once. Printed text and neat handwriting work best; messy handwriting may need fixing in the review step. Lines are turned into tasks with the same plain-English parser as quick add.
+- **Coach me** and **Break it down** use your browser's own on-device model when it has one (for example Chrome's built-in Prompt API) and fall back to Tempo's built-in logic everywhere else. The built-in coach ranks your tasks, checks overdue work and overload days, and the built-in breakdown picks steps that fit the kind of task (study, writing, project, homework).
+- You review and approve everything before it becomes a task.
 
 ## How the scheduler works
 
@@ -95,4 +96,4 @@ Starting from now (rounded to 15 min, inside that day's availability), Tempo ski
 - Plans only today. Next: multi-day planning toward big deadlines.
 - Browser alerts only fire while the tab is open.
 - Photo import works best with clear, well-lit, straight-on photos.
-- Next: let Claude propose a reordered plan to accept in one click; ICS calendar import.
+- Next: a smarter on-device model for photos and coaching; ICS calendar import.
