@@ -38,32 +38,49 @@ Built for the Human + AI Hackathon.
 
 The scheduler is a transparent algorithm (below), so you can see why a task landed where it did.
 
-## Privacy and security
+## Quick start: no setup
 
-- **Each person gets a private, encrypted profile.** Data is encrypted with AES-GCM using a key derived from the person's passcode (PBKDF2, 310,000 rounds). Only ciphertext is written to the browser, so someone else on the same computer cannot read it without the passcode. Your API key is inside the encrypted data.
-- **Lock** in the sidebar locks instantly, and Tempo auto-locks after 10 minutes of inactivity.
-- **No server, no accounts, no analytics.** Nothing is shared between users or devices. The only network traffic is to the Anthropic API, and only when you use the coach, photo import or break-it-down.
-- **A Content Security Policy** blocks the page from sending data to any other site.
-- All text from AI or imports is escaped before display.
-- Limits: there is no passcode recovery by design. Anyone who knows your passcode, or a computer that already has malware, can still get in. Forgot a passcode? Delete the profile on the lock screen and start fresh.
+Open `index.html` in Chrome, Edge or Firefox. Create an account with an email and password. Your planner is encrypted on this device with that password, so other people using the same browser cannot read it, and each email gets its own separate planner.
+
+When you create an account (or reset a password), Tempo shows a **recovery code**. If you forget your password, choose "Forgot password?", enter your email, the recovery code and a new password. Tempo cannot email the code, because email needs a server. Save it somewhere safe: without the password or the code, the data cannot be recovered.
+
+Local accounts live in one browser on one device. For accounts that sync across devices and real email password resets, use the optional cloud mode below. Tempo switches to cloud mode automatically when Supabase keys are filled in.
+
+## Optional: cloud accounts with email reset
+
+Anyone can create an account with an email and password. Forgot your password? Tap "Forgot password?" and a reset link arrives by email. Tasks sync across devices because they are stored in the cloud.
+
+- **Auth and storage:** Supabase Auth (email + password, confirmation and reset emails) and one Postgres row per user.
+- **Row Level Security:** the database itself only lets a signed-in user read or write their own row (see `schema.sql`). Other users cannot see your data, even though the app code is public.
+- **Your Anthropic API key is never saved to your account.** It lives in the browser tab only and is cleared on sign out.
+- **A Content Security Policy** limits the page to talking to Supabase and the Anthropic API.
+- **Sign out** saves, clears everything from the screen and ends the session. Use it on shared computers.
+- Honest limits: data is encrypted in transit and at rest by Supabase, but it is not end-to-end encrypted, because email password recovery and end-to-end encryption cannot both work. Whoever owns the Supabase project can technically access the database. Two devices editing at once: the last save wins.
+
+### Cloud setup (10 minutes)
+
+1. Create a free project at supabase.com.
+2. SQL Editor: paste and run `schema.sql`.
+3. Project Settings, API: copy the **Project URL** and the **anon public key** into `SUPABASE_URL` and `SUPABASE_ANON_KEY` near the top of the script in `index.html`.
+4. Authentication, URL Configuration: set **Site URL** to where the app runs (for example `http://localhost:8000/` while testing) and add the same address, plus your deployed address, under **Redirect URLs**. Reset and confirmation links only work for listed addresses.
+5. **Email for everyone:** Supabase's built-in email sender is limited to a few emails per hour, which is fine for testing but not for the world. Under Authentication, SMTP Settings, plug in a provider such as Resend, Brevo or Postmark. You can also edit the email templates there.
+6. Optional: Authentication, Providers, Email: set your minimum password length (the app asks for 8) and decide whether to require email confirmation.
 
 ## Run it
 
-No build step, no dependencies.
-
 ```bash
 cd juniper-planner
-python3 -m http.server 8000   # visit http://localhost:8000, or just open index.html
+python3 -m http.server 8000   # open http://localhost:8000
 ```
 
-Data is stored encrypted in your browser's `localStorage`. Encryption needs a secure context, so use `localhost` (as above) or https rather than opening the file directly.
+Local mode works when you open `index.html` directly (if your browser blocks encryption on files, use the command above). Cloud mode needs a real web address, because email links cannot point at a file. To let anyone use it, upload the folder to Netlify, Vercel or GitHub Pages and add that address to the Redirect URLs.
 
 ### Turn on the AI features
 
 1. Click **AI settings** and paste an Anthropic API key (console.anthropic.com). Default model: `claude-sonnet-5-5`.
-2. **Add from photo** on Dashboard or Tasks, or **Ask Claude** on Dashboard.
+2. **Add from photo** on Dashboard or Tasks, **Break it down** on a task, or **Ask Claude** on Dashboard.
 
-The key stays in your browser and is sent only to `api.anthropic.com` (direct browser access). Use a key with a low spend limit and never deploy this publicly with a shared key. For production, add a small server in between. Photos are resized in the browser and sent only to the API.
+The key goes straight from your browser to `api.anthropic.com`. Use a key with a low spend limit and never share one key across users. For production, add a small server that holds the key and rate-limits each account.
 
 ## How the scheduler works
 
