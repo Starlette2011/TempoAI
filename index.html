@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data:; connect-src https://api.anthropic.com; base-uri 'none'">
 <title>Tempo — Smart Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -60,6 +61,7 @@ dialog::backdrop{background:#0008}dialog label{display:block;font-size:.85rem;co
 .empty{color:var(--mute);padding:14px 0;margin:0}
 .dot{width:12px;height:12px;border-radius:50%;flex:none}
 .cf{position:fixed;top:-30px;width:10px;height:14px;border-radius:2px;pointer-events:none;z-index:9;animation:fall 1.8s ease-in forwards}@keyframes fall{to{transform:translateY(105vh) rotate(540deg)}}
+.locked{grid-template-columns:1fr}.locked nav{display:none}
 @media(max-width:800px){body{grid-template-columns:1fr}nav{position:static;height:auto;flex-direction:row;flex-wrap:wrap;border:0;border-bottom:1px solid var(--line);padding:12px}.brand{padding:0 10px 0 0}.tip{display:none}.grid{grid-template-columns:1fr}.filters{grid-template-columns:1fr 1fr}.filters input{grid-column:1/-1}.slot{grid-template-columns:78px 1fr}.slot>:last-child{grid-column:2}}
 </style>
 </head>
@@ -67,7 +69,7 @@ dialog::backdrop{background:#0008}dialog label{display:block;font-size:.85rem;co
 <nav>
   <div class="brand">Tempo</div>
   <a data-v="dash">Dashboard</a><a data-v="tasks">Tasks</a><a data-v="sched">Schedule</a><a data-v="stats">Analytics</a>
-  <a id="settings">AI settings</a>
+  <a id="settings">AI settings</a><a id="lock">Lock</a>
   <div style="flex:1"></div>
   <div class="tip">Tip: press <b>Plan my day</b> and Tempo fits your tasks around your classes. Or snap a photo of your homework list.</div>
 </nav>
@@ -81,10 +83,43 @@ dialog::backdrop{background:#0008}dialog label{display:block;font-size:.85rem;co
 const KEY='tempo-planner-v1',DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],CATS=['School','Personal','Work','Health','Other'];
 const W={high:3,medium:2,low:1},COL=['#3d3df5','#e8452c','#1f9d63','#f0a020','#a13dc4','#0a9db8','#888888'];
 const $=s=>document.querySelector(s),uid=()=>Math.random().toString(36).slice(2,9);
-let S={tasks:[],classes:[],events:[],blocks:[],logs:[],plan:null,avail:{},apiKey:'',model:'claude-sonnet-5-5',timer:null};
-try{Object.assign(S,JSON.parse(localStorage.getItem(KEY)||'{}'))}catch{}
-S.tasks.forEach(t=>{if(!t.status)t.status=t.done?'done':'pending'});
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch{}};
+const blank=()=>({tasks:[],classes:[],events:[],blocks:[],logs:[],plan:null,avail:{},apiKey:'',model:'claude-sonnet-5-5',timer:null});
+let S=blank(),CK=null,SALT=null,PROFILE=null,saveT,idleT;
+/* ---------- privacy: per-profile AES-GCM encryption, key derived from a passcode (PBKDF2). Nothing readable is stored. ---------- */
+const enc=new TextEncoder(),pk=n=>'tempo:p:'+n;
+const b64=b=>{let s='';for(const x of new Uint8Array(b))s+=String.fromCharCode(x);return btoa(s)},unb=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const profiles=()=>{try{return JSON.parse(localStorage.getItem('tempo:profiles'))||[]}catch{return[]}};
+async function derive(pass,salt){const m=await crypto.subtle.importKey('raw',enc.encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:310000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+async function seal(){const iv=crypto.getRandomValues(new Uint8Array(12)),ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},CK,enc.encode(JSON.stringify(S)));
+  localStorage.setItem(pk(PROFILE),JSON.stringify({salt:b64(SALT),iv:b64(iv),data:b64(ct)}))}
+const save=()=>{if(!CK)return;clearTimeout(saveT);saveT=setTimeout(()=>seal().catch(()=>{}),150)};
+async function unlock(name,pass,create){
+  if(!window.crypto?.subtle)throw new Error('Encryption needs https or localhost. Run python3 -m http.server and open localhost:8000.');
+  let st=blank(),salt;
+  if(create){salt=crypto.getRandomValues(new Uint8Array(16));const old=localStorage.getItem(KEY);if(old&&!profiles().length){try{st=JSON.parse(old)}catch{}}}
+  else{const r=JSON.parse(localStorage.getItem(pk(name)));salt=unb(r.salt);
+    try{st=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb(r.iv)},await derive(pass,salt),unb(r.data))))}catch{throw new Error('Wrong passcode.')}}
+  S=Object.assign(blank(),st);S.tasks.forEach(t=>{if(!t.status)t.status=t.done?'done':'pending'});
+  CK=await derive(pass,salt);SALT=salt;PROFILE=name;await seal();
+  if(create){localStorage.setItem('tempo:profiles',JSON.stringify([...profiles(),name]));localStorage.removeItem(KEY)}
+  bump();render();
+}
+async function lock(){if(!CK)return;clearTimeout(saveT);try{await seal()}catch{}
+  S=blank();CK=SALT=PROFILE=null;coach='';view='dash';selMode=false;sel.clear();exp.clear();if($('#dlg').open)$('#dlg').close();render()}
+const bump=()=>{clearTimeout(idleT);if(CK)idleT=setTimeout(lock,10*6e4)};
+['click','keydown','pointerdown'].forEach(ev=>addEventListener(ev,bump,true));
+function lockScreen(msg=''){
+  const n=profiles();
+  $('#app').innerHTML=`<div class="panel" style="max-width:430px;margin:8vh auto"><h1>Tempo</h1><p class="meta" style="margin-top:8px">Your planner is encrypted on this device with your passcode. Other people using this browser cannot read it.</p>
+  <form id="lk">${n.length?`<label for="lsel">Profile</label><select id="lsel" name="n">${n.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}<option value="__new">New profile</option></select>`:'<input type="hidden" name="n" value="__new">'}
+  <div id="nm" ${n.length?'hidden':''}><label for="nmi">Profile name</label><input id="nmi" name="nm" maxlength="30" autocomplete="off"></div>
+  <label for="pw">Passcode</label><input id="pw" type="password" name="p" required autocomplete="off">
+  <p class="meta">New profiles need at least 6 characters. There is no recovery if you forget a passcode.</p>
+  <p id="err" role="alert" style="color:var(--bad);min-height:1.4em;margin:6px 0">${esc(msg)}</p>
+  <div class="row"><button class="pri">Unlock</button>${n.length?'<button type="button" class="ghost" data-a="delprof">Delete this profile</button>':''}</div></form></div>`;
+}
+const safeColor=c=>/^#[0-9a-f]{6}$/i.test(c)?c:'#f0a020';
 let view='dash',stab='classes',filter='all',query='',fcat='',fpri='',coach='',selMode=false;
 const sel=new Set(),exp=new Set();
 
@@ -197,7 +232,7 @@ async function importPhoto(file){
 function reviewImport(list){
   const tmr=new Date();tmr.setDate(tmr.getDate()+1);tmr.setHours(23,0,0,0);
   $('#dlg').innerHTML=`<form method="dialog" id="f"><h2>Found ${list.length} task${list.length>1?'s':''}</h2><p class="meta">Untick anything you don't want. Fix titles or dates here.</p>
-  ${list.map((t,i)=>`<div class="li" style="align-items:flex-start"><input type="checkbox" name="on${i}" checked aria-label="Include"><div class="grow"><input name="ti${i}" value="${esc(t.title)}"><div class="two" style="margin-top:6px"><input type="datetime-local" name="du${i}" value="${/^\d{4}-\d\d-\d\dT\d\d:\d\d/.test(t.due||'')?t.due.slice(0,16):isoLocal(tmr)}"><span class="meta">${esc(t.priority||'medium')} · ${esc(t.category||'School')} · ${t.estMinutes||30}m</span></div></div></div>`).join('')}
+  ${list.map((t,i)=>`<div class="li" style="align-items:flex-start"><input type="checkbox" name="on${i}" checked aria-label="Include"><div class="grow"><input name="ti${i}" value="${esc(t.title)}"><div class="two" style="margin-top:6px"><input type="datetime-local" name="du${i}" value="${/^\d{4}-\d\d-\d\dT\d\d:\d\d/.test(t.due||'')?t.due.slice(0,16):isoLocal(tmr)}"><span class="meta">${esc(t.priority||'medium')} · ${esc(t.category||'School')} · ${+t.estMinutes||30}m</span></div></div></div>`).join('')}
   <div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="close">Cancel</button><button class="pri">Add selected tasks</button></div></form>`;
   $('#f').onsubmit=e=>{const f=new FormData(e.target);list.forEach((t,i)=>{if(f.get('on'+i))S.tasks.push({id:uid(),status:'pending',notes:'',repeat:false,title:f.get('ti'+i).trim()||t.title,due:f.get('du'+i),
     priority:W[t.priority]?t.priority:'medium',category:CATS.includes(t.category)?t.category:'School',est:+t.estMinutes||30})});save();render()};
@@ -208,7 +243,7 @@ const slotHTML=x=>{
   const time=`<small>${fromMin(x.s)}<br>${fromMin(x.e)}</small>`;
   if(x.type==='break')return `<div class="slot brk">${time}<small>Break</small><span></span></div>`;
   if(x.type==='task'){const t=S.tasks.find(t=>t.id===x.taskId);return t?`<div class="slot">${time}<div><h3>${esc(t.title)}</h3><small>${dur(x.e-x.s)} focus · due ${fmtDue(t.due)}</small></div><button data-a="start" data-id="${t.id}">Start</button></div>`:''}
-  return `<div class="slot" style="border-color:${x.color||'var(--warn)'}">${time}<div><h3>${esc(x.name)}</h3>${x.loc?`<small>${esc(x.loc)}</small>`:''}</div><span class="tag">${x.kind}</span></div>`};
+  return `<div class="slot" style="border-color:${safeColor(x.color)}">${time}<div><h3>${esc(x.name)}</h3>${x.loc?`<small>${esc(x.loc)}</small>`:''}</div><span class="tag">${x.kind}</span></div>`};
 function viewDash(){
   const now=new Date(),k=dayKey(now),op=S.tasks.filter(isOpen).sort(byDue);
   const act=S.timer&&S.tasks.find(t=>t.id===S.timer.id);
@@ -257,7 +292,7 @@ function viewSched(){
   const kind={classes:'class',events:'event',blocks:'block'}[stab];
   let body;
   if(stab==='avail')body=`<div class="panel"><p class="meta">The hours Tempo may schedule focus time each day.</p>${DAYS.map((d,i)=>{const a=avail(i);return `<div class="li"><label class="row" style="margin:0;color:var(--ink);width:90px"><input type="checkbox" data-av="${i}" data-f="on" ${a.on?'checked':''}>${d}</label><input type="time" data-av="${i}" data-f="start" value="${a.start}" style="width:130px"><span>to</span><input type="time" data-av="${i}" data-f="end" value="${a.end}" style="width:130px"></div>`}).join('')}</div>`;
-  else body=S[stab].map(c=>`<div class="panel row" style="margin-bottom:12px"><span class="dot" style="background:${c.color}"></span><div class="grow"><h3>${esc(c.name)}</h3><div class="meta">${c.date?new Date(c.date+'T12:00').toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}):c.days.map(d=>DAYS[d]).join(', ')} · ${fromMin(toMin(c.start))} – ${fromMin(toMin(c.end))}${c.loc?`<br>${esc(c.loc)}`:''}</div></div><button class="ghost" data-a="edits" data-id="${c.id}">Edit</button><button class="ghost" data-a="dels" data-id="${c.id}">Delete</button></div>`).join('')||`<p class="empty">Nothing here yet.</p>`;
+  else body=S[stab].map(c=>`<div class="panel row" style="margin-bottom:12px"><span class="dot" style="background:${safeColor(c.color)}"></span><div class="grow"><h3>${esc(c.name)}</h3><div class="meta">${c.date?new Date(c.date+'T12:00').toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}):c.days.map(d=>DAYS[d]).join(', ')} · ${fromMin(toMin(c.start))} – ${fromMin(toMin(c.end))}${c.loc?`<br>${esc(c.loc)}`:''}</div></div><button class="ghost" data-a="edits" data-id="${c.id}">Edit</button><button class="ghost" data-a="dels" data-id="${c.id}">Delete</button></div>`).join('')||`<p class="empty">Nothing here yet.</p>`;
   return `<div class="head"><div><h1>Schedule</h1><p>Classes, events and time blocks that Tempo plans around</p></div>${stab==='avail'?'':`<button class="pri" data-a="adds">Add ${kind}</button>`}</div>
   <div class="tabs">${tabs.map(([k,l])=>`<button class="${stab===k?'on':''}" data-a="stab" data-id="${k}">${l}</button>`).join('')}</div>${body}`;
 }
@@ -305,7 +340,7 @@ function schedForm(list,c){
     if(c.id)Object.assign(c,o);else S[list].push({id:uid(),...o})});
 }
 function openSettings(msg){
-  const d=$('#dlg');d.innerHTML=`<form method="dialog" id="f"><h2>AI settings</h2><p class="meta">${esc(msg||'Optional.')} Planning works offline. The coach and photo import use Claude, which needs an Anthropic API key. The key stays in this browser and is sent only to api.anthropic.com.</p>
+  const d=$('#dlg');d.innerHTML=`<form method="dialog" id="f"><h2>AI settings</h2><p class="meta">${esc(msg||'Optional.')} Planning works offline. The coach and photo import use Claude, which needs an Anthropic API key. The key is encrypted in this browser with your passcode and sent only to api.anthropic.com.</p>
   <label>API key</label><input name="k" type="password" value="${esc(S.apiKey)}" placeholder="sk-ant-…"><label>Model</label><input name="m" value="${esc(S.model)}">
   <div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="close">Cancel</button><button class="pri">Save settings</button></div></form>`;
   d.showModal();$('#f').onsubmit=e=>{const f=new FormData(e.target);S.apiKey=f.get('k').trim();S.model=f.get('m').trim()||'claude-sonnet-5-5';save()};
@@ -353,22 +388,30 @@ const A={
     const it=[...busyFor(now).map(b=>({s:b.s,e:b.e,n:b.name})),...(S.plan?.date===dayKey(now)?S.plan.items.filter(i=>i.type==='task').map(i=>({s:i.start,e:i.end,n:'Focus: '+(get(S.tasks,i.taskId)?.title||'')})):[])];
     const body=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Tempo//EN',...it.flatMap(x=>['BEGIN:VEVENT','UID:'+uid()+'@tempo','DTSTAMP:'+k+'T000000','DTSTART:'+tm(x.s),'DTEND:'+tm(x.e),'SUMMARY:'+x.n.replace(/[,;\n]/g,' '),'END:VEVENT']),'END:VCALENDAR'].join('\r\n');
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([body],{type:'text/calendar'}));a.download='tempo-today.ics';a.click()},
+  delprof(){const n=$('#lsel')?.value;if(!n||n==='__new')return;if(confirm(`Permanently delete profile "${n}" and all its data? This cannot be undone.`)){localStorage.removeItem(pk(n));localStorage.setItem('tempo:profiles',JSON.stringify(profiles().filter(x=>x!==n)));lockScreen()}},
   notify(){'Notification' in window?Notification.requestPermission().then(p=>alert(p==='granted'?'Alerts are on. Keep this tab open to get them.':'Alerts are blocked in your browser settings.')):alert('This browser does not support alerts.')}
 };
 document.addEventListener('click',e=>{
   const n=e.target.closest('nav a[data-v]');if(n){view=n.dataset.v;render();return}
   if(e.target.id==='settings'){openSettings();return}
+  if(e.target.id==='lock'){lock();return}
   const b=e.target.closest('[data-a]');if(b)A[b.dataset.a]?.(b.dataset.id);
 });
+document.addEventListener('submit',async e=>{if(e.target.id!=='lk')return;e.preventDefault();
+  const f=new FormData(e.target),pick=f.get('n'),create=pick==='__new',name=create?(f.get('nm')||'').trim():pick,p=f.get('p'),err=m=>{$('#err').textContent=m};
+  if(create){if(!name)return err('Enter a profile name.');if(profiles().includes(name))return err('That profile already exists.');if(p.length<6)return err('Use at least 6 characters.')}
+  err('Unlocking…');try{await unlock(name,p,create)}catch(x){err(x.message||'Could not unlock.')}});
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='qa')A.quick()});
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.id==='photo'&&t.files[0]){importPhoto(t.files[0]);t.value=''}
   if(t.dataset.av!==undefined){const a={...avail(t.dataset.av)};a[t.dataset.f]=t.dataset.f==='on'?t.checked:t.value;S.avail[t.dataset.av]=a;save()}
+  if(t.id==='lsel')$('#nm').hidden=t.value!=='__new';
   if(t.id==='fcat'){fcat=t.value;render()}if(t.id==='fpri'){fpri=t.value;render()}
 });
 document.addEventListener('input',e=>{if(e.target.id==='search'){query=e.target.value;const p=e.target.selectionStart;render();const s=$('#search');s.focus();s.setSelectionRange(p,p)}});
 function render(){
+  document.body.classList.toggle('locked',!CK);if(!CK)return lockScreen();
   document.querySelectorAll('nav a[data-v]').forEach(a=>a.classList.toggle('on',a.dataset.v===view));
   $('#app').innerHTML={dash:viewDash,tasks:viewTasks,sched:viewSched,stats:viewStats}[view]();tick();
 }
