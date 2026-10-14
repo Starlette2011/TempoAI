@@ -2,8 +2,6 @@
 
 Tempo turns a messy to-do list into a realistic plan for today. It knows your classes, events and time blocks, scores every task by priority and deadline, and fits focus time into the gaps. You can even snap a photo of a homework list and Tempo turns it into tasks.
 
-Built for the Human + AI Hackathon.
-
 ## Features
 
 **Dashboard**: active task timer, productivity summary (today, this week, completed, in progress), deadline alerts, upcoming deadlines, today's schedule, browser alerts, one-click overdue rescue.
