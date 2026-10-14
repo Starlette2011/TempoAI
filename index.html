@@ -92,7 +92,7 @@ let S=blank(),USER=null,saveT,entering=false,booting=true,authMode=/type=recover
 const CONFIGURED=!!(SUPABASE_URL&&SUPABASE_ANON_KEY&&window.supabase);
 const sb=CONFIGURED?supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
 const HOME=location.origin+location.pathname;
-const LOCAL=!CONFIGURED;   // no Supabase keys: accounts live on this device, encrypted, with a recovery code instead of email reset
+const LOCAL=!CONFIGURED;   // no Supabase keys: accounts live on this device, encrypted with the password; a lost password means lost data
 const enc=new TextEncoder(),dec=new TextDecoder();
 const b64=b=>{let s='';for(const x of new Uint8Array(b))s+=String.fromCharCode(x);return btoa(s)},unb=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 const hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -100,28 +100,22 @@ const emailId=async e=>'tempo:acct:'+hex(await crypto.subtle.digest('SHA-256',en
 const KDF=async(secret,salt)=>{const m=await crypto.subtle.importKey('raw',enc.encode(secret),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:310000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])};
 const aes=async(key,bytes)=>{const iv=crypto.getRandomValues(new Uint8Array(12));return{iv:b64(iv),ct:b64(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,bytes))}};
 const unaes=async(key,o)=>new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb(o.iv)},key,unb(o.ct)));
-const newCode=()=>{const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';return [...crypto.getRandomValues(new Uint8Array(16))].map(x=>A[x%32]).join('').replace(/(.{4})(?!$)/g,'$1-')};
-const normCode=c=>c.toUpperCase().replace(/[^A-Z0-9]/g,'');
 const rnd=n=>crypto.getRandomValues(new Uint8Array(n));
-let LK=null,LID=null,LREC=null,LEMAIL='',newCodeShown='';
+let LK=null,LID=null,LREC=null,LEMAIL='';
 const useKey=raw=>crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt','decrypt']);
 async function localFlush(){LREC.d=await aes(LK,enc.encode(JSON.stringify({...S,apiKey:''})));localStorage.setItem(LID,JSON.stringify(LREC))}
 async function localSignUp(email,pw){
   const id=await emailId(email);if(localStorage.getItem(id))throw new Error('An account with that email already exists on this device.');
-  const raw=rnd(32),code=newCode(),s1=rnd(16),s2=rnd(16);
-  LREC={s1:b64(s1),s2:b64(s2),wp:await aes(await KDF(pw,s1),raw),wr:await aes(await KDF(normCode(code),s2),raw)};
-  LID=id;LK=await useKey(raw);LEMAIL=email.trim().toLowerCase();S=blank();await localFlush();return code}
+  const raw=rnd(32),s1=rnd(16);
+  LREC={s1:b64(s1),wp:await aes(await KDF(pw,s1),raw)};
+  LID=id;LK=await useKey(raw);LEMAIL=email.trim().toLowerCase();S=blank();await localFlush()}
 async function localSignIn(email,pw){
   const id=await emailId(email),r=localStorage.getItem(id);if(!r)throw new Error('No account with that email on this device. Create one first.');
   const rec=JSON.parse(r);let raw;try{raw=await unaes(await KDF(pw,unb(rec.s1)),rec.wp)}catch{throw new Error('Wrong email or password.')}
   LID=id;LREC=rec;LK=await useKey(raw);LEMAIL=email.trim().toLowerCase();
   let st=blank();if(rec.d)st=JSON.parse(dec.decode(await unaes(LK,rec.d)));
   S=Object.assign(blank(),st);S.tasks.forEach(t=>{if(!t.status)t.status=t.done?'done':'pending'});}
-async function localReset(email,code,pw){
-  const id=await emailId(email),r=localStorage.getItem(id);if(!r)throw new Error('No account with that email on this device.');
-  const rec=JSON.parse(r);let raw;try{raw=await unaes(await KDF(normCode(code),unb(rec.s2)),rec.wr)}catch{throw new Error('That recovery code does not match.')}
-  const s1=rnd(16),s2=rnd(16),nc=newCode();rec.s1=b64(s1);rec.s2=b64(s2);rec.wp=await aes(await KDF(pw,s1),raw);rec.wr=await aes(await KDF(normCode(nc),s2),raw);
-  localStorage.setItem(id,JSON.stringify(rec));return nc}
+async function localErase(email){const id=await emailId(email);if(!localStorage.getItem(id))throw new Error('No account with that email on this device.');localStorage.removeItem(id)}
 function enterLocal(){USER={email:LEMAIL,id:LID};view='dash';authMsg='';try{S.apiKey=sessionStorage.getItem('tempo:key')||''}catch{}render()}
 const setSync=t=>{const x=$('#sync');if(x)x.textContent=t};
 async function flush(){if(!USER)return;if(LOCAL){try{await localFlush();setSync('Saved on this device')}catch{setSync('Not saved')}return}const{error}=await sb.from('planners').upsert({user_id:USER.id,data:{...S,apiKey:''},updated_at:new Date().toISOString()});setSync(error?'Not saved. Check your connection.':'Saved')}
@@ -148,21 +142,17 @@ if(sb)sb.auth.onAuthStateChange((ev,session)=>{setTimeout(async()=>{
 },0)});
 else booting=false;
 function authScreen(){
-  const m=authMode,title={in:'Sign in',up:'Create your account',forgot:'Reset your password',reset:'Choose a new password'}[m];
+  const m=authMode,title={in:'Sign in',up:'Create your account',forgot:LOCAL?'Forgot your password?':'Reset your password',reset:'Choose a new password'}[m];
   const link=(id,t)=>`<button type="button" class="ghost" data-a="amode" data-id="${id}">${t}</button>`;
-  if(m==='code'){$('#app').innerHTML=`<div class="panel" style="max-width:440px;margin:8vh auto"><h1>Tempo</h1><h2 style="margin-top:18px">Save your recovery code</h2>
-    <p>If you ever forget your password, this code is the only way back into your planner. Nobody can email it to you, so keep it somewhere safe.</p>
-    <div class="panel" style="text-align:center;font:700 1.4rem 'Bricolage Grotesque';letter-spacing:.04em;margin:14px 0;background:var(--bg)">${esc(newCodeShown)}</div>
-    <div class="row wrap"><button data-a="copycode">Copy</button><button data-a="dlcode">Download</button></div>
-    <button class="pri" style="width:100%;margin-top:14px" data-a="cont">I saved it. Open my planner</button></div>`;return}
+  const warn='<p style="background:var(--badsoft);color:var(--bad);border-radius:10px;padding:10px 12px;margin:14px 0 0"><b>Passwords cannot be recovered.</b> If you lose your password, your account data is lost permanently.<br><br><b>Your data is saved in this browser only.</b> If you clear your browser data (cookies and site data, which is often part of "delete history"), or use a private window, your account and tasks are deleted and cannot be restored.</p>';
   $('#app').innerHTML=`<div class="panel" style="max-width:420px;margin:8vh auto"><h1>Tempo</h1><p class="meta" style="margin-top:6px">A planner that works around your real week.</p>
   ${booting?'<p class="meta">Loading…</p>':`<h2 style="margin-top:18px">${title}</h2>
-  ${LOCAL?'<p class="meta">Your account is stored on this device and encrypted with your password. Forgot it? Use your recovery code.</p>':''}
+  ${LOCAL&&m!=='forgot'?'<p class="meta" style="margin:0">Your account is stored on this device and encrypted with your password.</p>'+warn:''}
+  ${LOCAL&&m==='forgot'?'<p>There is no way to recover a lost password, because your data is encrypted with it. Your account data is lost for good. You can erase the account below and create a new one with the same email.</p>':''}
   <form id="au">${m==='reset'?'':'<label for="em">Email</label><input id="em" type="email" name="e" required autocomplete="email">'}
-  ${LOCAL&&m==='forgot'?'<label for="rc">Recovery code</label><input id="rc" name="rc" required autocomplete="off" placeholder="XXXX-XXXX-XXXX-XXXX">':''}
-  ${m==='forgot'&&!LOCAL?'':`<label for="pw">${m==='in'?'Password':'New password'}</label><input id="pw" type="password" name="p" required ${m==='in'?'':'minlength="8"'} autocomplete="${m==='in'?'current-password':'new-password'}">${m==='in'?'':'<p class="meta" style="margin:4px 0 0">At least 8 characters.</p>'}`}
+  ${m==='forgot'?'':`<label for="pw">${m==='reset'?'New password':'Password'}</label><input id="pw" type="password" name="p" required ${m==='in'?'':'minlength="8"'} autocomplete="${m==='in'?'current-password':'new-password'}">${m==='in'?'':'<p class="meta" style="margin:4px 0 0">At least 8 characters.</p>'}`}
   <p id="err" role="alert" style="min-height:1.4em;margin:10px 0">${esc(authMsg)}</p>
-  <button class="pri" style="width:100%">${{in:'Sign in',up:'Create account',forgot:LOCAL?'Reset password':'Email me a reset link',reset:'Save new password'}[m]}</button></form>
+  <button class="pri" style="width:100%">${{in:'Sign in',up:'Create account',forgot:LOCAL?'Erase this account and its data':'Email me a reset link',reset:'Save new password'}[m]}</button></form>
   <div class="row wrap" style="margin-top:12px;justify-content:space-between">${m==='in'?link('up','Create account')+link('forgot','Forgot password?'):m==='reset'?'':link('in','Back to sign in')}</div>`}</div>`;
 }
 const safeColor=c=>/^#[0-9a-f]{6}$/i.test(c)?c:'#f0a020';
@@ -434,9 +424,6 @@ const A={
     const it=[...busyFor(now).map(b=>({s:b.s,e:b.e,n:b.name})),...(S.plan?.date===dayKey(now)?S.plan.items.filter(i=>i.type==='task').map(i=>({s:i.start,e:i.end,n:'Focus: '+(get(S.tasks,i.taskId)?.title||'')})):[])];
     const body=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Tempo//EN',...it.flatMap(x=>['BEGIN:VEVENT','UID:'+uid()+'@tempo','DTSTAMP:'+k+'T000000','DTSTART:'+tm(x.s),'DTEND:'+tm(x.e),'SUMMARY:'+x.n.replace(/[,;\n]/g,' '),'END:VEVENT']),'END:VCALENDAR'].join('\r\n');
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([body],{type:'text/calendar'}));a.download='tempo-today.ics';a.click()},
-  cont(){authMode='in';enterLocal()},
-  copycode(){navigator.clipboard?.writeText(newCodeShown)},
-  dlcode(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['Tempo recovery code for '+LEMAIL+'\n'+newCodeShown+'\n'],{type:'text/plain'}));a.download='tempo-recovery-code.txt';a.click()},
   amode(id){authMode=id;authMsg='';authScreen()},
   notify(){'Notification' in window?Notification.requestPermission().then(p=>alert(p==='granted'?'Alerts are on. Keep this tab open to get them.':'Alerts are blocked in your browser settings.')):alert('This browser does not support alerts.')}
 };
@@ -450,11 +437,13 @@ document.addEventListener('submit',async e=>{if(e.target.id!=='au')return;e.prev
   const f=new FormData(e.target),em=(f.get('e')||'').trim(),pw=f.get('p')||'',say=m=>{authMsg=m;const x=$('#err');if(x)x.textContent=m};
   if(LOCAL){
     if(!window.crypto?.subtle)return say('Encryption needs https or localhost. Run python3 -m http.server 8000 and open localhost:8000.');
-    say('Working…');
     try{
+      if(authMode==='forgot'){
+        if(!confirm('Permanently erase the account for '+em+' and all of its data on this device? This cannot be undone.'))return say('');
+        await localErase(em);authMode='in';authMsg='Account erased. You can create a new one with the same email.';authScreen();return}
+      say('Working…');
       if(authMode==='in'){await localSignIn(em,pw);enterLocal()}
-      else if(authMode==='up'){newCodeShown=await localSignUp(em,pw);authMode='code';authScreen()}
-      else{newCodeShown=await localReset(em,f.get('rc')||'',pw);await localSignIn(em,pw);authMode='code';authScreen()}
+      else{await localSignUp(em,pw);enterLocal()}
     }catch(x){say(x.message||'Something went wrong.')}return}
   say('Working…');
   try{
