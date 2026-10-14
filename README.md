@@ -38,6 +38,15 @@ Built for the Human + AI Hackathon.
 
 The scheduler is a transparent algorithm (below), so you can see why a task landed where it did.
 
+## Privacy and security
+
+- **Each person gets a private, encrypted profile.** Data is encrypted with AES-GCM using a key derived from the person's passcode (PBKDF2, 310,000 rounds). Only ciphertext is written to the browser, so someone else on the same computer cannot read it without the passcode. Your API key is inside the encrypted data.
+- **Lock** in the sidebar locks instantly, and Tempo auto-locks after 10 minutes of inactivity.
+- **No server, no accounts, no analytics.** Nothing is shared between users or devices. The only network traffic is to the Anthropic API, and only when you use the coach, photo import or break-it-down.
+- **A Content Security Policy** blocks the page from sending data to any other site.
+- All text from AI or imports is escaped before display.
+- Limits: there is no passcode recovery by design. Anyone who knows your passcode, or a computer that already has malware, can still get in. Forgot a passcode? Delete the profile on the lock screen and start fresh.
+
 ## Run it
 
 No build step, no dependencies.
@@ -47,7 +56,7 @@ cd juniper-planner
 python3 -m http.server 8000   # visit http://localhost:8000, or just open index.html
 ```
 
-Data is stored in your browser's `localStorage`.
+Data is stored encrypted in your browser's `localStorage`. Encryption needs a secure context, so use `localhost` (as above) or https rather than opening the file directly.
 
 ### Turn on the AI features
 
