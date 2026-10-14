@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data:; connect-src https://api.anthropic.com; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data:; connect-src https://api.anthropic.com https://*.supabase.co; base-uri 'none'">
 <title>Tempo — Smart Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -69,8 +69,9 @@ dialog::backdrop{background:#0008}dialog label{display:block;font-size:.85rem;co
 <nav>
   <div class="brand">Tempo</div>
   <a data-v="dash">Dashboard</a><a data-v="tasks">Tasks</a><a data-v="sched">Schedule</a><a data-v="stats">Analytics</a>
-  <a id="settings">AI settings</a><a id="lock">Lock</a>
+  <a id="settings">AI settings</a><a id="lock">Sign out</a>
   <div style="flex:1"></div>
+  <div class="meta" id="who" style="word-break:break-all"></div><div class="meta" id="sync" style="margin-bottom:8px"></div>
   <div class="tip">Tip: press <b>Plan my day</b> and Tempo fits your tasks around your classes. Or snap a photo of your homework list.</div>
 </nav>
 <main id="app"></main>
@@ -78,46 +79,91 @@ dialog::backdrop{background:#0008}dialog label{display:block;font-size:.85rem;co
 <dialog id="dlg"></dialog>
 <input type="file" id="photo" accept="image/*" hidden>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ---------- state ---------- */
 const KEY='tempo-planner-v1',DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],CATS=['School','Personal','Work','Health','Other'];
 const W={high:3,medium:2,low:1},COL=['#3d3df5','#e8452c','#1f9d63','#f0a020','#a13dc4','#0a9db8','#888888'];
 const $=s=>document.querySelector(s),uid=()=>Math.random().toString(36).slice(2,9);
+/* ---------- accounts: Supabase Auth (email + password, reset by email). Data lives in one row per user, protected by Row Level Security. ---------- */
+const SUPABASE_URL='',SUPABASE_ANON_KEY='';   // paste yours here (see README). The anon key is safe to publish; RLS protects the data.
 const blank=()=>({tasks:[],classes:[],events:[],blocks:[],logs:[],plan:null,avail:{},apiKey:'',model:'claude-sonnet-5-5',timer:null});
-let S=blank(),CK=null,SALT=null,PROFILE=null,saveT,idleT;
-/* ---------- privacy: per-profile AES-GCM encryption, key derived from a passcode (PBKDF2). Nothing readable is stored. ---------- */
-const enc=new TextEncoder(),pk=n=>'tempo:p:'+n;
+let S=blank(),USER=null,saveT,entering=false,booting=true,authMode=/type=recovery/.test(location.hash)?'reset':'in',authMsg='';
+const CONFIGURED=!!(SUPABASE_URL&&SUPABASE_ANON_KEY&&window.supabase);
+const sb=CONFIGURED?supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
+const HOME=location.origin+location.pathname;
+const LOCAL=!CONFIGURED;   // no Supabase keys: accounts live on this device, encrypted, with a recovery code instead of email reset
+const enc=new TextEncoder(),dec=new TextDecoder();
 const b64=b=>{let s='';for(const x of new Uint8Array(b))s+=String.fromCharCode(x);return btoa(s)},unb=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
-const profiles=()=>{try{return JSON.parse(localStorage.getItem('tempo:profiles'))||[]}catch{return[]}};
-async function derive(pass,salt){const m=await crypto.subtle.importKey('raw',enc.encode(pass),'PBKDF2',false,['deriveKey']);
-  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:310000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
-async function seal(){const iv=crypto.getRandomValues(new Uint8Array(12)),ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},CK,enc.encode(JSON.stringify(S)));
-  localStorage.setItem(pk(PROFILE),JSON.stringify({salt:b64(SALT),iv:b64(iv),data:b64(ct)}))}
-const save=()=>{if(!CK)return;clearTimeout(saveT);saveT=setTimeout(()=>seal().catch(()=>{}),150)};
-async function unlock(name,pass,create){
-  if(!window.crypto?.subtle)throw new Error('Encryption needs https or localhost. Run python3 -m http.server and open localhost:8000.');
-  let st=blank(),salt;
-  if(create){salt=crypto.getRandomValues(new Uint8Array(16));const old=localStorage.getItem(KEY);if(old&&!profiles().length){try{st=JSON.parse(old)}catch{}}}
-  else{const r=JSON.parse(localStorage.getItem(pk(name)));salt=unb(r.salt);
-    try{st=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb(r.iv)},await derive(pass,salt),unb(r.data))))}catch{throw new Error('Wrong passcode.')}}
-  S=Object.assign(blank(),st);S.tasks.forEach(t=>{if(!t.status)t.status=t.done?'done':'pending'});
-  CK=await derive(pass,salt);SALT=salt;PROFILE=name;await seal();
-  if(create){localStorage.setItem('tempo:profiles',JSON.stringify([...profiles(),name]));localStorage.removeItem(KEY)}
-  bump();render();
+const hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+const emailId=async e=>'tempo:acct:'+hex(await crypto.subtle.digest('SHA-256',enc.encode(e.trim().toLowerCase())));
+const KDF=async(secret,salt)=>{const m=await crypto.subtle.importKey('raw',enc.encode(secret),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:310000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])};
+const aes=async(key,bytes)=>{const iv=crypto.getRandomValues(new Uint8Array(12));return{iv:b64(iv),ct:b64(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,bytes))}};
+const unaes=async(key,o)=>new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb(o.iv)},key,unb(o.ct)));
+const newCode=()=>{const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';return [...crypto.getRandomValues(new Uint8Array(16))].map(x=>A[x%32]).join('').replace(/(.{4})(?!$)/g,'$1-')};
+const normCode=c=>c.toUpperCase().replace(/[^A-Z0-9]/g,'');
+const rnd=n=>crypto.getRandomValues(new Uint8Array(n));
+let LK=null,LID=null,LREC=null,LEMAIL='',newCodeShown='';
+const useKey=raw=>crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt','decrypt']);
+async function localFlush(){LREC.d=await aes(LK,enc.encode(JSON.stringify({...S,apiKey:''})));localStorage.setItem(LID,JSON.stringify(LREC))}
+async function localSignUp(email,pw){
+  const id=await emailId(email);if(localStorage.getItem(id))throw new Error('An account with that email already exists on this device.');
+  const raw=rnd(32),code=newCode(),s1=rnd(16),s2=rnd(16);
+  LREC={s1:b64(s1),s2:b64(s2),wp:await aes(await KDF(pw,s1),raw),wr:await aes(await KDF(normCode(code),s2),raw)};
+  LID=id;LK=await useKey(raw);LEMAIL=email.trim().toLowerCase();S=blank();await localFlush();return code}
+async function localSignIn(email,pw){
+  const id=await emailId(email),r=localStorage.getItem(id);if(!r)throw new Error('No account with that email on this device. Create one first.');
+  const rec=JSON.parse(r);let raw;try{raw=await unaes(await KDF(pw,unb(rec.s1)),rec.wp)}catch{throw new Error('Wrong email or password.')}
+  LID=id;LREC=rec;LK=await useKey(raw);LEMAIL=email.trim().toLowerCase();
+  let st=blank();if(rec.d)st=JSON.parse(dec.decode(await unaes(LK,rec.d)));
+  S=Object.assign(blank(),st);S.tasks.forEach(t=>{if(!t.status)t.status=t.done?'done':'pending'});}
+async function localReset(email,code,pw){
+  const id=await emailId(email),r=localStorage.getItem(id);if(!r)throw new Error('No account with that email on this device.');
+  const rec=JSON.parse(r);let raw;try{raw=await unaes(await KDF(normCode(code),unb(rec.s2)),rec.wr)}catch{throw new Error('That recovery code does not match.')}
+  const s1=rnd(16),s2=rnd(16),nc=newCode();rec.s1=b64(s1);rec.s2=b64(s2);rec.wp=await aes(await KDF(pw,s1),raw);rec.wr=await aes(await KDF(normCode(nc),s2),raw);
+  localStorage.setItem(id,JSON.stringify(rec));return nc}
+function enterLocal(){USER={email:LEMAIL,id:LID};view='dash';authMsg='';try{S.apiKey=sessionStorage.getItem('tempo:key')||''}catch{}render()}
+const setSync=t=>{const x=$('#sync');if(x)x.textContent=t};
+async function flush(){if(!USER)return;if(LOCAL){try{await localFlush();setSync('Saved on this device')}catch{setSync('Not saved')}return}const{error}=await sb.from('planners').upsert({user_id:USER.id,data:{...S,apiKey:''},updated_at:new Date().toISOString()});setSync(error?'Not saved. Check your connection.':'Saved')}
+const save=()=>{if(!USER)return;clearTimeout(saveT);setSync('Saving…');saveT=setTimeout(flush,600)};
+async function enter(session){
+  if(entering)return;entering=true;
+  const{data,error}=await sb.from('planners').select('data').eq('user_id',session.user.id).maybeSingle();
+  entering=false;
+  if(error){authMsg='Could not load your data: '+error.message;render();return}
+  S=Object.assign(blank(),data?.data||{});S.tasks.forEach(t=>{if(!t.status)t.status=t.done?'done':'pending'});
+  try{S.apiKey=sessionStorage.getItem('tempo:key')||''}catch{}
+  USER=session.user;view='dash';authMsg='';render();
 }
-async function lock(){if(!CK)return;clearTimeout(saveT);try{await seal()}catch{}
-  S=blank();CK=SALT=PROFILE=null;coach='';view='dash';selMode=false;sel.clear();exp.clear();if($('#dlg').open)$('#dlg').close();render()}
-const bump=()=>{clearTimeout(idleT);if(CK)idleT=setTimeout(lock,10*6e4)};
-['click','keydown','pointerdown'].forEach(ev=>addEventListener(ev,bump,true));
-function lockScreen(msg=''){
-  const n=profiles();
-  $('#app').innerHTML=`<div class="panel" style="max-width:430px;margin:8vh auto"><h1>Tempo</h1><p class="meta" style="margin-top:8px">Your planner is encrypted on this device with your passcode. Other people using this browser cannot read it.</p>
-  <form id="lk">${n.length?`<label for="lsel">Profile</label><select id="lsel" name="n">${n.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}<option value="__new">New profile</option></select>`:'<input type="hidden" name="n" value="__new">'}
-  <div id="nm" ${n.length?'hidden':''}><label for="nmi">Profile name</label><input id="nmi" name="nm" maxlength="30" autocomplete="off"></div>
-  <label for="pw">Passcode</label><input id="pw" type="password" name="p" required autocomplete="off">
-  <p class="meta">New profiles need at least 6 characters. There is no recovery if you forget a passcode.</p>
-  <p id="err" role="alert" style="color:var(--bad);min-height:1.4em;margin:6px 0">${esc(msg)}</p>
-  <div class="row"><button class="pri">Unlock</button>${n.length?'<button type="button" class="ghost" data-a="delprof">Delete this profile</button>':''}</div></form></div>`;
+async function lock(){   // sign out
+  clearTimeout(saveT);try{await flush()}catch{}
+  USER=null;S=blank();coach='';view='dash';selMode=false;sel.clear();exp.clear();authMode='in';authMsg='';
+  try{sessionStorage.removeItem('tempo:key')}catch{}
+  if($('#dlg').open)$('#dlg').close();LK=LREC=LID=null;render();if(sb)await sb.auth.signOut();
+}
+if(sb)sb.auth.onAuthStateChange((ev,session)=>{setTimeout(async()=>{
+  if(ev==='PASSWORD_RECOVERY')authMode='reset';
+  if(session&&!USER&&authMode!=='reset')await enter(session);
+  booting=false;if(!USER)render();
+},0)});
+else booting=false;
+function authScreen(){
+  const m=authMode,title={in:'Sign in',up:'Create your account',forgot:'Reset your password',reset:'Choose a new password'}[m];
+  const link=(id,t)=>`<button type="button" class="ghost" data-a="amode" data-id="${id}">${t}</button>`;
+  if(m==='code'){$('#app').innerHTML=`<div class="panel" style="max-width:440px;margin:8vh auto"><h1>Tempo</h1><h2 style="margin-top:18px">Save your recovery code</h2>
+    <p>If you ever forget your password, this code is the only way back into your planner. Nobody can email it to you, so keep it somewhere safe.</p>
+    <div class="panel" style="text-align:center;font:700 1.4rem 'Bricolage Grotesque';letter-spacing:.04em;margin:14px 0;background:var(--bg)">${esc(newCodeShown)}</div>
+    <div class="row wrap"><button data-a="copycode">Copy</button><button data-a="dlcode">Download</button></div>
+    <button class="pri" style="width:100%;margin-top:14px" data-a="cont">I saved it. Open my planner</button></div>`;return}
+  $('#app').innerHTML=`<div class="panel" style="max-width:420px;margin:8vh auto"><h1>Tempo</h1><p class="meta" style="margin-top:6px">A planner that works around your real week.</p>
+  ${booting?'<p class="meta">Loading…</p>':`<h2 style="margin-top:18px">${title}</h2>
+  ${LOCAL?'<p class="meta">Your account is stored on this device and encrypted with your password. Forgot it? Use your recovery code.</p>':''}
+  <form id="au">${m==='reset'?'':'<label for="em">Email</label><input id="em" type="email" name="e" required autocomplete="email">'}
+  ${LOCAL&&m==='forgot'?'<label for="rc">Recovery code</label><input id="rc" name="rc" required autocomplete="off" placeholder="XXXX-XXXX-XXXX-XXXX">':''}
+  ${m==='forgot'&&!LOCAL?'':`<label for="pw">${m==='in'?'Password':'New password'}</label><input id="pw" type="password" name="p" required ${m==='in'?'':'minlength="8"'} autocomplete="${m==='in'?'current-password':'new-password'}">${m==='in'?'':'<p class="meta" style="margin:4px 0 0">At least 8 characters.</p>'}`}
+  <p id="err" role="alert" style="min-height:1.4em;margin:10px 0">${esc(authMsg)}</p>
+  <button class="pri" style="width:100%">${{in:'Sign in',up:'Create account',forgot:LOCAL?'Reset password':'Email me a reset link',reset:'Save new password'}[m]}</button></form>
+  <div class="row wrap" style="margin-top:12px;justify-content:space-between">${m==='in'?link('up','Create account')+link('forgot','Forgot password?'):m==='reset'?'':link('in','Back to sign in')}</div>`}</div>`;
 }
 const safeColor=c=>/^#[0-9a-f]{6}$/i.test(c)?c:'#f0a020';
 let view='dash',stab='classes',filter='all',query='',fcat='',fpri='',coach='',selMode=false;
@@ -340,10 +386,10 @@ function schedForm(list,c){
     if(c.id)Object.assign(c,o);else S[list].push({id:uid(),...o})});
 }
 function openSettings(msg){
-  const d=$('#dlg');d.innerHTML=`<form method="dialog" id="f"><h2>AI settings</h2><p class="meta">${esc(msg||'Optional.')} Planning works offline. The coach and photo import use Claude, which needs an Anthropic API key. The key is encrypted in this browser with your passcode and sent only to api.anthropic.com.</p>
+  const d=$('#dlg');d.innerHTML=`<form method="dialog" id="f"><h2>AI settings</h2><p class="meta">${esc(msg||'Optional.')} Planning works offline. The coach and photo import use Claude, which needs an Anthropic API key. The key stays in this browser tab only, is never saved to your account, and is sent only to api.anthropic.com.</p>
   <label>API key</label><input name="k" type="password" value="${esc(S.apiKey)}" placeholder="sk-ant-…"><label>Model</label><input name="m" value="${esc(S.model)}">
   <div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="close">Cancel</button><button class="pri">Save settings</button></div></form>`;
-  d.showModal();$('#f').onsubmit=e=>{const f=new FormData(e.target);S.apiKey=f.get('k').trim();S.model=f.get('m').trim()||'claude-sonnet-5-5';save()};
+  d.showModal();$('#f').onsubmit=e=>{const f=new FormData(e.target);S.apiKey=f.get('k').trim();try{sessionStorage.setItem('tempo:key',S.apiKey)}catch{}S.model=f.get('m').trim()||'claude-sonnet-5-5';save()};
 }
 
 /* ---------- timer + alerts ---------- */
@@ -388,7 +434,10 @@ const A={
     const it=[...busyFor(now).map(b=>({s:b.s,e:b.e,n:b.name})),...(S.plan?.date===dayKey(now)?S.plan.items.filter(i=>i.type==='task').map(i=>({s:i.start,e:i.end,n:'Focus: '+(get(S.tasks,i.taskId)?.title||'')})):[])];
     const body=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Tempo//EN',...it.flatMap(x=>['BEGIN:VEVENT','UID:'+uid()+'@tempo','DTSTAMP:'+k+'T000000','DTSTART:'+tm(x.s),'DTEND:'+tm(x.e),'SUMMARY:'+x.n.replace(/[,;\n]/g,' '),'END:VEVENT']),'END:VCALENDAR'].join('\r\n');
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([body],{type:'text/calendar'}));a.download='tempo-today.ics';a.click()},
-  delprof(){const n=$('#lsel')?.value;if(!n||n==='__new')return;if(confirm(`Permanently delete profile "${n}" and all its data? This cannot be undone.`)){localStorage.removeItem(pk(n));localStorage.setItem('tempo:profiles',JSON.stringify(profiles().filter(x=>x!==n)));lockScreen()}},
+  cont(){authMode='in';enterLocal()},
+  copycode(){navigator.clipboard?.writeText(newCodeShown)},
+  dlcode(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['Tempo recovery code for '+LEMAIL+'\n'+newCodeShown+'\n'],{type:'text/plain'}));a.download='tempo-recovery-code.txt';a.click()},
+  amode(id){authMode=id;authMsg='';authScreen()},
   notify(){'Notification' in window?Notification.requestPermission().then(p=>alert(p==='granted'?'Alerts are on. Keep this tab open to get them.':'Alerts are blocked in your browser settings.')):alert('This browser does not support alerts.')}
 };
 document.addEventListener('click',e=>{
@@ -397,21 +446,35 @@ document.addEventListener('click',e=>{
   if(e.target.id==='lock'){lock();return}
   const b=e.target.closest('[data-a]');if(b)A[b.dataset.a]?.(b.dataset.id);
 });
-document.addEventListener('submit',async e=>{if(e.target.id!=='lk')return;e.preventDefault();
-  const f=new FormData(e.target),pick=f.get('n'),create=pick==='__new',name=create?(f.get('nm')||'').trim():pick,p=f.get('p'),err=m=>{$('#err').textContent=m};
-  if(create){if(!name)return err('Enter a profile name.');if(profiles().includes(name))return err('That profile already exists.');if(p.length<6)return err('Use at least 6 characters.')}
-  err('Unlocking…');try{await unlock(name,p,create)}catch(x){err(x.message||'Could not unlock.')}});
+document.addEventListener('submit',async e=>{if(e.target.id!=='au')return;e.preventDefault();
+  const f=new FormData(e.target),em=(f.get('e')||'').trim(),pw=f.get('p')||'',say=m=>{authMsg=m;const x=$('#err');if(x)x.textContent=m};
+  if(LOCAL){
+    if(!window.crypto?.subtle)return say('Encryption needs https or localhost. Run python3 -m http.server 8000 and open localhost:8000.');
+    say('Working…');
+    try{
+      if(authMode==='in'){await localSignIn(em,pw);enterLocal()}
+      else if(authMode==='up'){newCodeShown=await localSignUp(em,pw);authMode='code';authScreen()}
+      else{newCodeShown=await localReset(em,f.get('rc')||'',pw);await localSignIn(em,pw);authMode='code';authScreen()}
+    }catch(x){say(x.message||'Something went wrong.')}return}
+  say('Working…');
+  try{
+    if(authMode==='in'){const{error}=await sb.auth.signInWithPassword({email:em,password:pw});if(error)throw error}
+    else if(authMode==='up'){const{data,error}=await sb.auth.signUp({email:em,password:pw,options:{emailRedirectTo:HOME}});if(error)throw error;
+      if(!data.session){authMode='in';authMsg='Check your email and click the confirmation link, then sign in.';authScreen()}}
+    else if(authMode==='forgot'){const{error}=await sb.auth.resetPasswordForEmail(em,{redirectTo:HOME});if(error)throw error;authMode='in';authMsg='If that email has an account, a reset link is on its way. Check your spam folder too.';authScreen()}
+    else{const{error}=await sb.auth.updateUser({password:pw});if(error)throw error;authMode='in';const{data:{session}}=await sb.auth.getSession();history.replaceState(null,'',HOME);if(session)await enter(session)}
+  }catch(x){say(x.message||'Something went wrong.')}});
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='qa')A.quick()});
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.id==='photo'&&t.files[0]){importPhoto(t.files[0]);t.value=''}
   if(t.dataset.av!==undefined){const a={...avail(t.dataset.av)};a[t.dataset.f]=t.dataset.f==='on'?t.checked:t.value;S.avail[t.dataset.av]=a;save()}
-  if(t.id==='lsel')$('#nm').hidden=t.value!=='__new';
   if(t.id==='fcat'){fcat=t.value;render()}if(t.id==='fpri'){fpri=t.value;render()}
 });
 document.addEventListener('input',e=>{if(e.target.id==='search'){query=e.target.value;const p=e.target.selectionStart;render();const s=$('#search');s.focus();s.setSelectionRange(p,p)}});
 function render(){
-  document.body.classList.toggle('locked',!CK);if(!CK)return lockScreen();
+  document.body.classList.toggle('locked',!USER);if(!USER)return authScreen();
+  $('#who').textContent=USER.email||'';
   document.querySelectorAll('nav a[data-v]').forEach(a=>a.classList.toggle('on',a.dataset.v===view));
   $('#app').innerHTML={dash:viewDash,tasks:viewTasks,sched:viewSched,stats:viewStats}[view]();tick();
 }
