@@ -40,7 +40,7 @@ The scheduler is a transparent algorithm (below), so you can see why a task land
 
 Open `index.html` in Chrome, Edge or Firefox. Create an account with an email and password. Your planner is encrypted on this device with that password, so other people using the same browser cannot read it, and each email gets its own separate planner.
 
-When you create an account (or reset a password), Tempo shows a **recovery code**. If you forget your password, choose "Forgot password?", enter your email, the recovery code and a new password. Tempo cannot email the code, because email needs a server. Save it somewhere safe: without the password or the code, the data cannot be recovered.
+**Lost passwords cannot be recovered. If you forget your password, your account data is permanently lost.** The data is encrypted with the password, so nobody, including the developer, can get it back. The app says this on the sign-in and sign-up screens. **Clearing your browser data also deletes everything.** Local accounts are saved in the browser, so clearing cookies and site data (often bundled into "delete history"), or using a private window, erases the account and its tasks with no way to restore them. The app warns about this on the sign-in and sign-up screens. If you forget your password, "Forgot password?" lets you erase that account and create a fresh one with the same email.
 
 Local accounts live in one browser on one device. For accounts that sync across devices and real email password resets, use the optional cloud mode below. Tempo switches to cloud mode automatically when Supabase keys are filled in.
 
