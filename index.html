@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data:; connect-src https://api.anthropic.com https://*.supabase.co; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; worker-src blob: https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob: data:; connect-src https://cdn.jsdelivr.net https://*.supabase.co; base-uri 'none'">
 <title>Tempo — Smart Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -69,7 +69,7 @@ dialog::backdrop{background:#0008}dialog label{display:block;font-size:.85rem;co
 <nav>
   <div class="brand">Tempo</div>
   <a data-v="dash">Dashboard</a><a data-v="tasks">Tasks</a><a data-v="sched">Schedule</a><a data-v="stats">Analytics</a>
-  <a id="settings">AI settings</a><a id="lock">Sign out</a>
+  <a id="lock">Sign out</a>
   <div style="flex:1"></div>
   <div class="meta" id="who" style="word-break:break-all"></div><div class="meta" id="sync" style="margin-bottom:8px"></div>
   <div class="tip">Tip: press <b>Plan my day</b> and Tempo fits your tasks around your classes. Or snap a photo of your homework list.</div>
@@ -80,6 +80,7 @@ dialog::backdrop{background:#0008}dialog label{display:block;font-size:.85rem;co
 <input type="file" id="photo" accept="image/*" hidden>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script>
 /* ---------- state ---------- */
 const KEY='tempo-planner-v1',DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],CATS=['School','Personal','Work','Health','Other'];
@@ -87,7 +88,7 @@ const W={high:3,medium:2,low:1},COL=['#3d3df5','#e8452c','#1f9d63','#f0a020','#a
 const $=s=>document.querySelector(s),uid=()=>Math.random().toString(36).slice(2,9);
 /* ---------- accounts: Supabase Auth (email + password, reset by email). Data lives in one row per user, protected by Row Level Security. ---------- */
 const SUPABASE_URL='',SUPABASE_ANON_KEY='';   // paste yours here (see README). The anon key is safe to publish; RLS protects the data.
-const blank=()=>({tasks:[],classes:[],events:[],blocks:[],logs:[],plan:null,avail:{},apiKey:'',model:'claude-sonnet-5-5',timer:null});
+const blank=()=>({tasks:[],classes:[],events:[],blocks:[],logs:[],plan:null,avail:{},timer:null});
 let S=blank(),USER=null,saveT,entering=false,booting=true,authMode=/type=recovery/.test(location.hash)?'reset':'in',authMsg='';
 const CONFIGURED=!!(SUPABASE_URL&&SUPABASE_ANON_KEY&&window.supabase);
 const sb=CONFIGURED?supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
@@ -103,7 +104,7 @@ const unaes=async(key,o)=>new Uint8Array(await crypto.subtle.decrypt({name:'AES-
 const rnd=n=>crypto.getRandomValues(new Uint8Array(n));
 let LK=null,LID=null,LREC=null,LEMAIL='';
 const useKey=raw=>crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt','decrypt']);
-async function localFlush(){LREC.d=await aes(LK,enc.encode(JSON.stringify({...S,apiKey:''})));localStorage.setItem(LID,JSON.stringify(LREC))}
+async function localFlush(){LREC.d=await aes(LK,enc.encode(JSON.stringify(S)));localStorage.setItem(LID,JSON.stringify(LREC))}
 async function localSignUp(email,pw){
   const id=await emailId(email);if(localStorage.getItem(id))throw new Error('An account with that email already exists on this device.');
   const raw=rnd(32),s1=rnd(16);
@@ -116,9 +117,9 @@ async function localSignIn(email,pw){
   let st=blank();if(rec.d)st=JSON.parse(dec.decode(await unaes(LK,rec.d)));
   S=Object.assign(blank(),st);S.tasks.forEach(t=>{if(!t.status)t.status=t.done?'done':'pending'});}
 async function localErase(email){const id=await emailId(email);if(!localStorage.getItem(id))throw new Error('No account with that email on this device.');localStorage.removeItem(id)}
-function enterLocal(){USER={email:LEMAIL,id:LID};view='dash';authMsg='';try{S.apiKey=sessionStorage.getItem('tempo:key')||''}catch{}render()}
+function enterLocal(){USER={email:LEMAIL,id:LID};view='dash';authMsg='';render()}
 const setSync=t=>{const x=$('#sync');if(x)x.textContent=t};
-async function flush(){if(!USER)return;if(LOCAL){try{await localFlush();setSync('Saved on this device')}catch{setSync('Not saved')}return}const{error}=await sb.from('planners').upsert({user_id:USER.id,data:{...S,apiKey:''},updated_at:new Date().toISOString()});setSync(error?'Not saved. Check your connection.':'Saved')}
+async function flush(){if(!USER)return;if(LOCAL){try{await localFlush();setSync('Saved on this device')}catch{setSync('Not saved')}return}const{error}=await sb.from('planners').upsert({user_id:USER.id,data:S,updated_at:new Date().toISOString()});setSync(error?'Not saved. Check your connection.':'Saved')}
 const save=()=>{if(!USER)return;clearTimeout(saveT);setSync('Saving…');saveT=setTimeout(flush,600)};
 async function enter(session){
   if(entering)return;entering=true;
@@ -126,13 +127,12 @@ async function enter(session){
   entering=false;
   if(error){authMsg='Could not load your data: '+error.message;render();return}
   S=Object.assign(blank(),data?.data||{});S.tasks.forEach(t=>{if(!t.status)t.status=t.done?'done':'pending'});
-  try{S.apiKey=sessionStorage.getItem('tempo:key')||''}catch{}
+  
   USER=session.user;view='dash';authMsg='';render();
 }
 async function lock(){   // sign out
   clearTimeout(saveT);try{await flush()}catch{}
   USER=null;S=blank();coach='';view='dash';selMode=false;sel.clear();exp.clear();authMode='in';authMsg='';
-  try{sessionStorage.removeItem('tempo:key')}catch{}
   if($('#dlg').open)$('#dlg').close();LK=LREC=LID=null;render();if(sb)await sb.auth.signOut();
 }
 if(sb)sb.auth.onAuthStateChange((ev,session)=>{setTimeout(async()=>{
@@ -237,33 +237,40 @@ function generatePlan(){
   S.plan={date:dayKey(now),items,leftover:q.length};save();render();
 }
 
-/* ---------- Claude API (coach + photo import) ---------- */
-async function claude(content,system,max=800){
-  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':S.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:S.model,max_tokens:max,system,messages:[{role:'user',content}]})});
-  const j=await r.json();if(j.error)throw new Error(j.error.message);return j.content.map(c=>c.text||'').join('');
+/* ---------- built-in AI: on-device, no keys, no accounts with an AI company ----------
+   Photos: Tesseract.js reads the text on your device. Coach / break-it-down: the browser's own on-device model when it has one
+   (Chrome's Prompt API), otherwise Tempo's built-in logic. Every feature works either way. */
+async function sysAI(prompt,system){
+  try{const LM=window.LanguageModel;if(!LM||(await LM.availability())==='unavailable')return null;
+    const ses=await LM.create({initialPrompts:[{role:'system',content:system}]});const out=await ses.prompt(prompt);ses.destroy?.();return out}catch{return null}
 }
+const jsonOf=t=>{try{return JSON.parse(t.slice(t.indexOf('['),t.lastIndexOf(']')+1))}catch{return null}};
+function localCoach(){
+  const now=new Date(),op=S.tasks.filter(isOpen).sort((a,b)=>score(b,now)-score(a,now)),od=op.filter(overdue),bad=forecast().filter(d=>d.need>0&&d.need>=d.free),top=op[0];
+  if(!top)return 'You have no open tasks. Add something, or enjoy the break.';
+  const risk=od.length?`${od.length} task(s) are overdue. Use "Move overdue to tomorrow" so they can be scheduled.`:bad.length?`${bad.map(d=>DAYS[d.d.getDay()]).join(', ')} look overloaded. Start earlier or move a deadline.`:S.plan&&S.plan.leftover?`${S.plan.leftover} task(s) did not fit today.`:'Nothing big right now. Keep your breaks short and real.';
+  return `Start now: "${top.title}" (${top.priority} priority, due ${fmtDue(top.due)}). It scores highest on urgency.\n\nRisk: ${risk}\n\nTweak: do your hardest 50-minute block first, then take the break. Your real pace is x${factor().toFixed(2)} your estimates.`}
 async function askCoach(){
-  if(!S.apiKey)return openSettings('Add an API key to use the coach.');
   coach='Thinking…';render();const now=new Date();
-  const ctx={now:now.toString(),busyToday:busyFor(now).map(b=>`${b.name} ${fromMin(b.s)}-${fromMin(b.e)}`),
-    tasks:S.tasks.filter(isOpen).map(t=>({title:t.title,due:t.due,priority:t.priority,estMin:t.est,loggedMin:logged(t.id)})),
-    plan:(S.plan?.items||[]).filter(i=>i.type==='task').map(i=>({task:S.tasks.find(t=>t.id===i.taskId)?.title,from:fromMin(i.start),to:fromMin(i.end)}))};
-  try{coach=await claude(JSON.stringify(ctx),"You are a calm, practical planning coach for a student. Reply in under 120 words: 1) the one thing to start now and why, 2) one risk in today's plan, 3) one concrete tweak. Suggest, never command.",400)}
-  catch(e){coach='Could not reach the API: '+e.message}
-  render();
+  const ctx={now:now.toString(),busyToday:busyFor(now).map(b=>`${b.name} ${fromMin(b.s)}-${fromMin(b.e)}`),tasks:S.tasks.filter(isOpen).map(t=>({title:t.title,due:t.due,priority:t.priority,estMin:t.est,loggedMin:logged(t.id)}))};
+  const out=await sysAI(JSON.stringify(ctx),"You are a calm, practical planning coach for a student. Reply in under 120 words: 1) the one thing to start now and why, 2) one risk, 3) one concrete tweak. Suggest, never command.");
+  coach=out||localCoach();render();
 }
-function shrink(file){return new Promise((ok,no)=>{const i=new Image();i.onerror=()=>no(new Error('That file is not a readable image.'));
-  i.onload=()=>{const k=Math.min(1,1600/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);ok(c.toDataURL('image/jpeg',.85).split(',')[1])};i.src=URL.createObjectURL(file)})}
+const STEPS=[[/test|exam|quiz|study|midterm|final/i,['Gather notes and materials','Review key concepts','Do practice problems','Write a one-page summary','Quiz yourself and fix weak spots']],
+  [/essay|write|report|paper|draft/i,['Outline your main points','Write a rough draft','Revise structure and ideas','Proofread and format']],
+  [/project|presentation|slides|poster/i,['Define what is needed','Collect material','Build the first version','Polish and practice']],
+  [/homework|worksheet|assignment|problems|hw|ws|chapter|review/i,['Read the instructions','Do the easy ones first','Work through the hard ones','Check answers and submit']]];
+const localSplit=t=>{const st=(STEPS.find(([re])=>re.test(t.title))||[0,['Plan what to do','Do the main work','Review and finish']])[1],each=Math.max(10,Math.round(t.est/st.length/5)*5);return st.map(x=>({title:`${t.title}: ${x}`,estMinutes:each}))};
 async function importPhoto(file){
-  const dlg=$('#dlg');dlg.innerHTML='<h2>Reading your photo…</h2><p class="meta">Claude is finding the tasks. This takes a few seconds.</p>';dlg.showModal();
+  const d=$('#dlg');d.innerHTML='<h2>Reading your photo…</h2><p class="meta" id="ocr">Starting the on-device reader. The first time can take a moment.</p>';d.showModal();
   try{
-    const data=await shrink(file),today=dayKey(new Date());
-    const txt=await claude([{type:'image',source:{type:'base64',media_type:'image/jpeg',data}},{type:'text',text:`Today is ${today}. List every task, assignment or to-do in this image. Reply with ONLY a JSON array, no other text. Each item: {"title":string,"due":"YYYY-MM-DDTHH:MM" or null,"priority":"high"|"medium"|"low","category":"School"|"Personal"|"Work"|"Health"|"Other","estMinutes":number}. If a due date has no year use the next upcoming date; if no time use 23:00.`}],'You turn photos of handwritten or printed task lists into structured data.',1500);
-    const list=JSON.parse(txt.slice(txt.indexOf('['),txt.lastIndexOf(']')+1));
-    if(!list.length)throw new Error('No tasks found. Try a clearer, closer photo.');
+    if(!window.Tesseract)throw new Error('The photo reader could not load. Check your connection and try again.');
+    const r=await Tesseract.recognize(file,'eng',{langPath:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int',logger:m=>{const x=$('#ocr');if(x&&m.status)x.textContent=m.status+(m.progress?' '+Math.round(m.progress*100)+'%':'')}});
+    const list=r.data.text.split('\n').map(x=>x.replace(/^\s*(?:[-*•·>□☐\[\]()|]|\d{1,2}[.)])\s*/,'').trim()).filter(x=>(x.match(/[A-Za-z]/g)||[]).length>=3).slice(0,30)
+      .map(x=>{const t=parseQuick(x);return{title:t.title,due:t.due,priority:t.priority,category:t.category,estMinutes:t.est}});
+    if(!list.length)throw new Error('No text found. Try a clearer, closer, well-lit photo. Printed or neat handwriting works best.');
     reviewImport(list);
-  }catch(e){dlg.innerHTML=`<h2>Couldn't read that photo</h2><p>${esc(e.message)}</p><div class="row" style="justify-content:flex-end"><button data-a="close">Close</button></div>`}
+  }catch(e){d.innerHTML=`<h2>Couldn't read that photo</h2><p>${esc(e.message)}</p><div class="row" style="justify-content:flex-end"><button data-a="close">Close</button></div>`}
 }
 function reviewImport(list){
   const tmr=new Date();tmr.setDate(tmr.getDate()+1);tmr.setHours(23,0,0,0);
@@ -289,7 +296,7 @@ function viewDash(){
   const li=t=>`<div class="li"><div><b>${esc(t.title)}</b><div class="meta">${fmtDue(t.due)} · ${t.category}</div></div>${overdue(t)?'<span class="tag od">Overdue</span>':`<span class="tag ${t.priority}">${t.priority}</span>`}</div>`;
   const st=(n,l)=>`<div class="stat"><span class="meta">${l}</span><b>${n}</b></div>`;
   return `<div class="head"><div><h1>${now.toLocaleDateString([],{weekday:'long'})}</h1><p>${now.toLocaleDateString([],{month:'long',day:'numeric'})}</p></div>
-  <div class="row wrap"><button data-a="photo">Add from photo</button><button data-a="coach">Ask Claude</button><button class="pri" data-a="plan">Plan my day</button></div></div>
+  <div class="row wrap"><button data-a="photo">Add from photo</button><button data-a="coach">Coach me</button><button class="pri" data-a="plan">Plan my day</button></div></div>
   <div class="quick"><input id="qa" placeholder='Type a task: "Math worksheet tomorrow 5pm high 45m"' aria-label="Quick add task"><button data-a="voice" aria-label="Speak a task">Speak</button><button class="pri" data-a="quick">Add task</button><button data-a="new">More options</button></div>
   <p class="hint">Dates, times, priority and length are picked out of your sentence. Tap Speak to say it instead.</p>${levelHTML()}
   ${coach?`<div class="panel" style="margin-bottom:16px"><h2>Coach</h2><div class="coach">${esc(coach)}</div></div>`:''}
@@ -375,12 +382,6 @@ function schedForm(list,c){
     const o={name:f.get('name').trim(),start:f.get('start'),end:f.get('end'),loc:f.get('loc').trim(),color:f.get('color'),...(ev?{date:f.get('date')}:{days:f.getAll('d').map(Number)})};
     if(c.id)Object.assign(c,o);else S[list].push({id:uid(),...o})});
 }
-function openSettings(msg){
-  const d=$('#dlg');d.innerHTML=`<form method="dialog" id="f"><h2>AI settings</h2><p class="meta">${esc(msg||'Optional.')} Planning works offline. The coach and photo import use Claude, which needs an Anthropic API key. The key stays in this browser tab only, is never saved to your account, and is sent only to api.anthropic.com.</p>
-  <label>API key</label><input name="k" type="password" value="${esc(S.apiKey)}" placeholder="sk-ant-…"><label>Model</label><input name="m" value="${esc(S.model)}">
-  <div class="row" style="margin-top:16px;justify-content:flex-end"><button type="button" data-a="close">Cancel</button><button class="pri">Save settings</button></div></form>`;
-  d.showModal();$('#f').onsubmit=e=>{const f=new FormData(e.target);S.apiKey=f.get('k').trim();try{sessionStorage.setItem('tempo:key',S.apiKey)}catch{}S.model=f.get('m').trim()||'claude-sonnet-5-5';save()};
-}
 
 /* ---------- timer + alerts ---------- */
 function stopTimer(){if(!S.timer)return;S.logs.push({taskId:S.timer.id,mins:Math.max(1,Math.round((Date.now()-S.timer.start)/6e4)),date:new Date().toISOString()});S.timer=null;save()}
@@ -397,7 +398,7 @@ setInterval(()=>{if(!('Notification' in window)||Notification.permission!=='gran
 /* ---------- actions ---------- */
 const get=(a,id)=>a.find(x=>x.id===id);
 const A={
-  plan:generatePlan,coach:askCoach,close:()=>$('#dlg').close(),photo:()=>S.apiKey?$('#photo').click():openSettings('Add an API key to read photos.'),
+  plan:generatePlan,coach:askCoach,close:()=>$('#dlg').close(),photo:()=>$('#photo').click(),
   quick(){const v=$('#qa').value.trim();if(!v)return;S.tasks.push(parseQuick(v));save();render()},
   new:()=>taskForm(),edit:id=>taskForm(get(S.tasks,id)),
   del(id){S.tasks=S.tasks.filter(t=>t.id!==id);save();render()},
@@ -415,11 +416,10 @@ const A={
     if(d&&t.repeat){const n=new Date(t.due);n.setDate(n.getDate()+7);S.tasks.push({...t,id:uid(),status:'pending',doneAt:null,notified:0,due:isoLocal(n)})}save();render()},
   resched(){const d=new Date();d.setDate(d.getDate()+1);d.setHours(23,0,0,0);S.tasks.filter(overdue).forEach(t=>t.due=isoLocal(d));save();render()},
   voice(){const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R)return alert('Voice input is not supported in this browser. Try Chrome or Safari.');const r=new R();r.lang='en-US';r.onresult=e=>{$('#qa').value=e.results[0][0].transcript;A.quick()};r.start()},
-  async split(id){const t=get(S.tasks,id);if(!S.apiKey)return openSettings('Add an API key to break tasks down.');
-    const d=$('#dlg');d.innerHTML='<h2>Breaking it down…</h2>';d.showModal();
-    try{const txt=await claude(`Task: "${t.title}". Notes: ${t.notes||'none'}. Due ${t.due}. Total time ${t.est} min. Break it into 3-6 concrete steps a student can finish in one sitting. Reply ONLY with a JSON array of {"title":string,"estMinutes":number}.`,'You split big tasks into small, concrete steps.',600);
-      reviewImport(JSON.parse(txt.slice(txt.indexOf('['),txt.lastIndexOf(']')+1)).map(x=>({...x,due:t.due,priority:t.priority,category:t.category})))}
-    catch(e){d.innerHTML=`<h2>Couldn't break that down</h2><p>${esc(e.message)}</p><button data-a="close">Close</button>`}},
+  async split(id){const t=get(S.tasks,id),d=$('#dlg');d.innerHTML='<h2>Breaking it down…</h2>';d.showModal();
+    let st=jsonOf(await sysAI(`Task: "${t.title}". Notes: ${t.notes||'none'}. Total time ${t.est} min. Break it into 3-6 concrete steps a student can finish in one sitting. Reply ONLY with a JSON array of {"title":string,"estMinutes":number}.`,'You split big tasks into small, concrete steps.')||'');
+    st=Array.isArray(st)?st.filter(x=>x&&typeof x.title==='string').slice(0,8):[];if(!st.length)st=localSplit(t);
+    reviewImport(st.map(x=>({title:x.title,estMinutes:+x.estMinutes||15,due:t.due,priority:t.priority,category:t.category})))},
   ics(){const now=new Date(),k=dayKey(now).replace(/-/g,''),tm=m=>k+'T'+pad(Math.floor(m/60))+pad(m%60)+'00';
     const it=[...busyFor(now).map(b=>({s:b.s,e:b.e,n:b.name})),...(S.plan?.date===dayKey(now)?S.plan.items.filter(i=>i.type==='task').map(i=>({s:i.start,e:i.end,n:'Focus: '+(get(S.tasks,i.taskId)?.title||'')})):[])];
     const body=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Tempo//EN',...it.flatMap(x=>['BEGIN:VEVENT','UID:'+uid()+'@tempo','DTSTAMP:'+k+'T000000','DTSTART:'+tm(x.s),'DTEND:'+tm(x.e),'SUMMARY:'+x.n.replace(/[,;\n]/g,' '),'END:VEVENT']),'END:VCALENDAR'].join('\r\n');
@@ -429,7 +429,6 @@ const A={
 };
 document.addEventListener('click',e=>{
   const n=e.target.closest('nav a[data-v]');if(n){view=n.dataset.v;render();return}
-  if(e.target.id==='settings'){openSettings();return}
   if(e.target.id==='lock'){lock();return}
   const b=e.target.closest('[data-a]');if(b)A[b.dataset.a]?.(b.dataset.id);
 });
