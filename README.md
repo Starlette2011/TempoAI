@@ -1,4 +1,4 @@
-# Tempo: a smart planner that works around your real week
+# Tempo: a smart planner that works around your week
 
 Tempo turns a messy to-do list into a realistic plan for today. It knows your classes, events and time blocks, scores every task by priority and deadline, and fits focus time into the gaps. You can even snap a photo of a homework list and Tempo turns it into tasks.
 
